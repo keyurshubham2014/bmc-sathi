@@ -228,7 +228,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
                     height: 30,
                     child: Row(
                       children: [
-                        const _LogoMark(),
+                        const LogoMark(),
                         const SizedBox(width: 10),
                         Flexible(
                           child: Text(t('app.name'), style: Tok.pageTitle, overflow: TextOverflow.ellipsis),
@@ -288,39 +288,6 @@ class _SidebarState extends ConsumerState<_Sidebar> {
       ),
     );
   }
-}
-
-class _LogoMark extends StatelessWidget {
-  const _LogoMark();
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 26,
-    height: 26,
-    decoration: BoxDecoration(color: Tok.teal, borderRadius: BorderRadius.circular(7)),
-    child: const CustomPaint(painter: _RoadMarkPainter()),
-  );
-}
-
-/// Two road edges meeting in the distance with a centre line: a plain mark, not a civic emblem.
-class _RoadMarkPainter extends CustomPainter {
-  const _RoadMarkPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1.9
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(const Offset(8, 20), const Offset(11.5, 6), p);
-    canvas.drawLine(const Offset(18, 20), const Offset(14.5, 6), p);
-    p
-      ..strokeWidth = 1.7
-      ..color = Colors.white.withValues(alpha: 0.85);
-    canvas.drawLine(const Offset(13, 18.5), const Offset(13, 15.5), p);
-    canvas.drawLine(const Offset(13, 12), const Offset(13, 9.5), p);
-  }
-
-  @override
-  bool shouldRepaint(_RoadMarkPainter oldDelegate) => false;
 }
 
 class _SearchField extends ConsumerStatefulWidget {
