@@ -988,8 +988,14 @@ class _ComplaintCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            // Wrap: a corrected category (old + new + chip) drops to its own line instead of overflowing the card.
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 6,
               children: [
+                Row(mainAxisSize: MainAxisSize.min, children: [
                 Text('${k['complaint_id']}', style: Tok.emph.copyWith(color: Tok.tealDark, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
                 if (k['language'] != null) ...[Pill('${k['language']}'), const SizedBox(width: 8)],
@@ -999,13 +1005,15 @@ class _ComplaintCard extends ConsumerWidget {
                   const Icon(Ico.arrowUp, size: 12, color: Tok.text2),
                   Text(' ${t('trail.upvotesN', {'n': k['upvotes']})}', style: Tok.sub.copyWith(color: Tok.ink)),
                 ],
-                const Spacer(),
+                ]),
+                Row(mainAxisSize: MainAxisSize.min, children: [
                 if (corrected) ...[
                   Text('${k['category_reported']}', style: Tok.sub.copyWith(decoration: TextDecoration.lineThrough)),
                   const SizedBox(width: 6),
                 ],
                 Text('${k['category_clean'] ?? k['category_reported']}', style: Tok.body.copyWith(fontWeight: FontWeight.w500)),
                 if (corrected) ...[const SizedBox(width: 6), Pill(t('trail.corrected'), tone: Tone.info, icon: Icons.edit_outlined)],
+                ]),
               ],
             ),
             if (translated) ...[
