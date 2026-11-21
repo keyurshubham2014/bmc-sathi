@@ -49,6 +49,7 @@ class WardScreen extends ConsumerWidget {
             selected: {tab},
             onSelectionChanged: (s) => context.go('/ward/${wardSlug(code)}?tab=${s.first}'),
           ),
+          if (tab == 'money') SummaryCard('ward', code),
           if (tab == 'money') ..._money(context, ref, w, session) else if (tab == 'plan') PlanTab(code) else WardScorecardTab(code),
         ]);
       },

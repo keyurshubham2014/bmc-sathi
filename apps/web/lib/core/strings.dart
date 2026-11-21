@@ -289,6 +289,10 @@ const _en = <String, String>{
   'intake.noRoad': 'No road could be matched. The issue is recorded for the ward.',
   'intake.rank': 'It is now rank {rank} in the ward plan, risk {score}.',
   'intake.openTrail': 'See the trail',
+  'summary.title': 'In brief',
+  'summary.by': 'Written by Claude from the figures on this page. The rules, not Claude, decide what is flagged.',
+  'trail.social': 'Also reported on social media',
+  'trail.socialCount': '{n} posts',
 };
 
 // Marathi: best effort, to be checked by a native reader.
@@ -566,4 +570,8 @@ const _mr = <String, String>{
   'intake.noRoad': 'रस्ता जुळला नाही. समस्या प्रभागासाठी नोंदवली आहे.',
   'intake.rank': 'प्रभाग नियोजनात आता क्रमांक {rank}, जोखीम {score}.',
   'intake.openTrail': 'मागोवा पाहा',
+  'summary.title': 'थोडक्यात',
+  'summary.by': 'या पानावरील आकड्यांवरून Claude ने लिहिले. काय निदर्शनास आणायचे हे नियम ठरवतात, Claude नाही.',
+  'trail.social': 'समाजमाध्यमांवरही नोंद',
+  'trail.socialCount': '{n} पोस्ट',
 };

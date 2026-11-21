@@ -47,7 +47,7 @@ The password is `DEMO_PASSWORD` in `apps/api/.env`.
 | | |
 |---|---|
 | `apps/api/prisma/views.sql` | Every audit, scorecard and plan rule, as SQL views. Thresholds and weights live in the `setting` table |
-| `apps/api/src/pipeline/` | `load` (CSV → tables), `enrich` and `group` (complaints → located issues), `verify` (reference counts) |
+| `apps/api/src/pipeline/` | `load` (CSV → tables), `enrich` and `group` (complaints → located issues), `social` (posts → issues), `summarise` (written summaries), `verify` (reference counts) |
 | `apps/api/src/modules/` | One file per API area: wards, flags, contractors, trail, intake, settings, ask |
 | `apps/web/lib/features/` | One folder per screen |
 | `docs/` | PRD, tech spec, task plan, design brief |
@@ -60,7 +60,8 @@ change `DATABASE_URL` and `DIRECT_URL`.
 
 ## Known limits
 
-- Complaint text is read by rules only (category as reported, a default severity per category). Claude-based
-  translation and severity reading are not wired in yet.
-- Ask needs `ANTHROPIC_API_KEY`; without it the button reports that Ask is not set up.
-- Written ward and contractor summaries, and social-post matching, are not built.
+- Without `ANTHROPIC_API_KEY`, complaint text is read by rules only (category as reported, a default severity
+  per category), Ask reports that it is not set up, and no summaries or social-post labels are written.
+- With a key, Claude translates complaints, corrects the category and reads severity; its output was
+  spot-checked, not measured against a labelled set.
+- Summaries are written by `npm run db:summarise`, which is not part of `db:setup`.

@@ -10,8 +10,10 @@
     "db:load": "tsx --env-file=.env src/pipeline/load.ts",
     "db:enrich": "tsx --env-file=.env src/pipeline/enrich.ts",
     "db:group": "tsx --env-file=.env src/pipeline/group.ts",
+    "db:social": "tsx --env-file=.env src/pipeline/social.ts",
+    "db:summarise": "tsx --env-file=.env src/pipeline/summarise.ts",
     "db:verify": "tsx --env-file=.env src/pipeline/verify.ts",
-    "db:setup": "npm run db:migrate && npm run db:views && npm run db:seed && npm run db:load && npm run db:enrich && npm run db:group && npm run db:verify",
+    "db:setup": "npm run db:migrate && npm run db:views && npm run db:seed && npm run db:load && npm run db:enrich && npm run db:group && npm run db:social && npm run db:verify",
     "test": "node --env-file=.env node_modules/vitest/vitest.mjs run"
   },
   "dependencies": {

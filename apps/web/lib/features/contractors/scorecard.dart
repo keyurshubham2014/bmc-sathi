@@ -87,6 +87,7 @@ class ContractorScreen extends ConsumerWidget {
             ]),
             AskButton('contractor', id),
           ]),
+          SummaryCard('contractor', id),
           ScorecardView(s, workOrdersUrl: '/contractors/$id/work-orders'),
         ]);
       },

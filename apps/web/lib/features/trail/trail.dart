@@ -119,6 +119,7 @@ class TrailScreen extends ConsumerWidget {
         final plan = d['plan'] == null ? null : Map<String, dynamic>.from(d['plan']);
         final complaints = List<Map<String, dynamic>>.from(d['complaints']);
         final flags = List<Map<String, dynamic>>.from(d['flags']);
+        final posts = List<Map<String, dynamic>>.from(d['social_posts']);
         Widget line(String s, {TextStyle? style}) => Padding(padding: const EdgeInsets.only(bottom: Gap.xs), child: Text(s, style: style ?? tt.bodyMedium));
 
         return PageBody(children: [
@@ -163,6 +164,20 @@ class TrailScreen extends ConsumerWidget {
               const SizedBox(height: Gap.xs),
               line('${t('ward.label', {'code': issue['ward_code']})} · ${t('trail.count', {'n': issue['complaint_count'], 'up': issue['upvotes_total']})}'),
               line(t('trail.severity', {'n': issue['severity']}), style: tt.bodySmall),
+              if (posts.isNotEmpty) ...[
+                const SizedBox(height: Gap.sm),
+                Text('${t('trail.social')} · ${t('trail.socialCount', {'n': posts.length})}', style: tt.labelLarge),
+                const SizedBox(height: Gap.xs),
+                for (final p in posts.take(5))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: Gap.sm),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${p['source']} · ${fmt.dateTime(p['posted_at'])}', style: tt.bodySmall),
+                      Text('${p['text']}', style: tt.bodyMedium),
+                      if (p['text_en'] != null) Text('${p['text_en']}', style: tt.bodyMedium!.copyWith(color: c.textSecondary)),
+                    ]),
+                  ),
+              ],
               if (plan != null) ...[
                 line(t('trail.planRank', {'rank': plan['rank'], 'score': (plan['risk_score'] as num).round()})),
                 TextButton.icon(

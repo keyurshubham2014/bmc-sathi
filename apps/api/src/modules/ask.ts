@@ -14,7 +14,7 @@ export const ask = Router();
 const SYSTEM = `You answer questions for Mumbai ward staff, auditors and citizens about road repair spending.
 Answer only from the JSON facts in the user message. If the facts do not answer the question, say so in one sentence.
 The audit rules have already decided what is flagged; explain their results, do not make new accusations. A flag is a reason to look, not proof of wrongdoing.
-Give amounts in rupees as written in the facts. Name the record ids (work order, complaint, issue) you relied on.
+Rates in the facts are fractions: say them as percentages. Give rupee amounts in lakh or crore. Name the record ids (work order, complaint, issue) you relied on.
 Keep the answer under 120 words, in plain sentences with no headings or lists.`;
 
 /** The facts Claude may use. Exported so a test can check them without calling Claude. */
@@ -86,4 +86,11 @@ ask.post("/", async (req, res) => {
   const answer = response.content.flatMap((blk) => (blk.type === "text" ? [blk.text] : [])).join("").trim();
   if (response.stop_reason === "refusal" || !answer) throw new AppError("assistant_unavailable", "Ask could not answer that question.");
   res.json({ answer, lang: b.lang, model: response.model });
+});
+
+// The stored summary for a ward or contractor, written by the summarise pipeline step. Null until it has run.
+ask.get("/summary", async (req, res) => {
+  const q = parse(z.object({ type: z.enum(["ward", "contractor"]), id: z.string().max(20), lang: z.enum(["en", "mr"]).default("en") }), req.query);
+  const row = await db.summary.findUnique({ where: { subject_type_subject_id_lang: { subject_type: q.type, subject_id: q.id, lang: q.lang } } });
+  res.json({ summary: row && { body: row.body, generated_at: row.generated_at } });
 });

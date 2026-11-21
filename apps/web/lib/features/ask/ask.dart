@@ -96,3 +96,34 @@ class _AskState extends ConsumerState<_AskPanel> {
     ]);
   }
 }
+
+final summaryProvider = FutureProvider.family<String?, (String, String, String)>((ref, k) async {
+  final data = await apiGet(ref, '/ask/summary', {'type': k.$1, 'id': k.$2, 'lang': k.$3});
+  return data['summary']?['body'] as String?;
+});
+
+/// The stored plain-language summary for a ward or contractor. Shows nothing if none has been written.
+class SummaryCard extends ConsumerWidget {
+  const SummaryCard(this.scopeType, this.scopeId, {super.key});
+  final String scopeType, scopeId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(stringsProvider);
+    final c = SathiColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    final body = ref.watch(summaryProvider((scopeType, scopeId, ref.watch(langProvider)))).value;
+    if (body == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(Gap.lg),
+      decoration: BoxDecoration(color: c.infoTint, borderRadius: BorderRadius.circular(kRadius)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(Icons.notes, size: 18, color: c.info), const SizedBox(width: Gap.sm), Text(t('summary.title'), style: tt.labelLarge)]),
+        const SizedBox(height: Gap.sm),
+        Text(body, style: tt.bodyLarge!.copyWith(color: c.textPrimary)),
+        const SizedBox(height: Gap.sm),
+        Text(t('summary.by'), style: tt.bodySmall),
+      ]),
+    );
+  }
+}
