@@ -1,17 +1,15 @@
-# bmc_sathi
+# BMC Sathi · Roads (web app)
 
-A new Flutter project.
+The Flutter web client for BMC Sathi. Setup, running and tests are in the [root README](../../README.md).
 
-## Getting Started
+```bash
+flutter run -d web-server --web-port 5173 --web-hostname localhost
+flutter test
+flutter analyze
+```
 
-This project is a starting point for a Flutter application.
+## Brand assets
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- The mark is a teal (`#0E6F66`) rounded square with two road edges and a dashed centre line. It is not a BMC crest, logo or seal (see `design/DESIGN.md`).
+- `web/favicon.svg` is the source drawing. The `LogoMark` widget in `lib/core/widgets.dart` draws the same shape in the app.
+- `web/favicon.png` (32 px) and `web/icons/*.png` are rendered from that SVG. The maskable icons keep the mark inside the safe zone, and `apple-touch-icon.png` has a full teal background with square corners because iOS rounds the corners itself.

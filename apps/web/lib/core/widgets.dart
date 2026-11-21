@@ -13,6 +13,7 @@
 ///   InsetCard({required child, padding, radius = 12})         grey card
 ///   SubCard({required child, padding})                        white sub-card inside an InsetCard
 ///   Caps(text, {color})                                       11 px tiny caps label
+///   LogoMark({size = 26})                                     teal road mark (same drawing as web/favicon.svg)
 /// Figures
 ///   StatBlock({required label, required value, icon, unit, sub, subLead, tone = StatTone.neutral, onTap})
 ///   StatRow({required children, flex})                        stats split by thin vertical rules
@@ -189,6 +190,43 @@ class Caps extends StatelessWidget {
   final Color? color;
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(), style: Tok.caps.copyWith(color: color));
+}
+
+/// The product mark: two road edges meeting in the distance with a centre line, never a civic emblem.
+/// Same geometry as the design's 26-unit SVG and web/favicon.svg.
+class LogoMark extends StatelessWidget {
+  const LogoMark({super.key, this.size = 26});
+  final double size;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: Tok.teal, borderRadius: BorderRadius.circular(size * 7 / 26)),
+        child: const CustomPaint(painter: _RoadMarkPainter()),
+      );
+}
+
+class _RoadMarkPainter extends CustomPainter {
+  const _RoadMarkPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 26);
+    final p = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.9
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(const Offset(8.2, 20.5), const Offset(10.8, 5.5), p);
+    canvas.drawLine(const Offset(17.8, 20.5), const Offset(15.2, 5.5), p);
+    p
+      ..strokeWidth = 1.7
+      ..color = Colors.white.withValues(alpha: 0.85);
+    for (final y in const [6.5, 11.7, 16.9]) {
+      canvas.drawLine(Offset(13, y), Offset(13, y + 2.6), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RoadMarkPainter oldDelegate) => false;
 }
 
 /// Paints a dashed rounded-rectangle border over its child.
