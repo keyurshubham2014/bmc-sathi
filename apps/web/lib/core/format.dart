@@ -7,15 +7,20 @@ String _trim(double v, int places) {
   return s.contains('.') ? s.replaceFirst(RegExp(r'\.?0+$'), '') : s;
 }
 
-/// Rupees in Indian units: ₹1.62 cr, ₹4.2 L, ₹9,500. Western digits in both languages.
+/// Rupees in Indian units: crore to two decimals (₹1.30 cr), lakh to one (₹63.2 L), under ₹1 lakh in
+/// full digits with Indian grouping (₹64,531). Western digits in both languages.
 String money(num? rupees) {
   if (rupees == null) return '–';
   final sign = rupees < 0 ? '-' : '';
   final v = rupees.abs().toDouble();
-  if (v >= 1e7) return '$sign₹${_trim(v / 1e7, 2)} cr';
-  if (v >= 1e5) return '$sign₹${_trim(v / 1e5, 1)} L';
+  // Round first so 99,99,999 shows as ₹1.00 cr, not ₹100.0 L.
+  if (double.parse((v / 1e5).toStringAsFixed(1)) >= 100) return '$sign₹${(v / 1e7).toStringAsFixed(2)} cr';
+  if (v >= 1e5) return '$sign₹${(v / 1e5).toStringAsFixed(1)} L';
   return '$sign₹${_grouped.format(v.round())}';
 }
+
+/// Full rupees with Indian grouping, for table cells that must show every digit: ₹1,02,000.
+String rupees(num? v) => v == null ? '–' : '${v < 0 ? '-' : ''}₹${_grouped.format(v.abs().round())}';
 
 String pct(num? share) => share == null ? '–' : '${(share * 100).round()}%';
 

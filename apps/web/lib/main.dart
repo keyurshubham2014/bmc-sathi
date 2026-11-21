@@ -26,7 +26,8 @@ class SathiApp extends ConsumerWidget {
         debugShowCheckedModeBanner: false,
         theme: buildTheme(SathiColors.light),
         darkTheme: buildTheme(SathiColors.dark),
-        themeMode: ref.watch(themeModeProvider),
+        // Only the light theme is designed; dark stays off until it is (DESIGN.md).
+        themeMode: ThemeMode.light,
         routerConfig: ref.watch(routerProvider),
       );
 }
