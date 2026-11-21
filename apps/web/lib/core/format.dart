@@ -30,8 +30,10 @@ String date(Object? iso) {
   return d == null ? '$iso' : DateFormat('d MMM yyyy').format(d.toUtc());
 }
 
-String dateTime(Object? iso) {
+/// Dataset times are wall-clock times, shown as stored. Pass [local] for a real moment (e.g. when a
+/// decision was saved), which is shown in the viewer's own time zone.
+String dateTime(Object? iso, {bool local = false}) {
   if (iso == null) return '–';
   final d = DateTime.tryParse('$iso');
-  return d == null ? '$iso' : DateFormat('d MMM yyyy, HH:mm').format(d.toUtc());
+  return d == null ? '$iso' : DateFormat('d MMM yyyy, HH:mm').format(local ? d.toLocal() : d.toUtc());
 }

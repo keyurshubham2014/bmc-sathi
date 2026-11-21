@@ -279,7 +279,7 @@ class _DecisionState extends ConsumerState<_DecisionForm> {
     final f = widget.flag;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Text(t('decision.title'), style: tt.titleMedium), const SizedBox(width: Gap.sm), DecisionChip('${f['decision']}')]),
-      if (f['decided_at'] != null) Text(t('decision.by', {'name': f['decided_by_name'] ?? '', 'when': fmt.dateTime(f['decided_at'])}), style: tt.bodySmall),
+      if (f['decided_at'] != null) Text(t('decision.by', {'name': f['decided_by_name'] ?? '', 'when': fmt.dateTime(f['decided_at'], local: true)}), style: tt.bodySmall),
       const SizedBox(height: Gap.sm),
       Wrap(spacing: Gap.sm, runSpacing: Gap.sm, children: [
         for (final d in ['confirmed', 'needs_explanation', 'not_an_issue'])
