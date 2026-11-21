@@ -6,11 +6,15 @@ Follow each rupee of Mumbai's monsoon road spend, from complaint to repair to ou
 
 > **Note:** Independent prototype, not an official BMC product. All data in this repository is synthetic.
 
+**Live demo: [bmc-sathi.onrender.com](https://bmc-sathi.onrender.com)**. Tap a demo account on the sign-in page; no password needed.
+It runs on Render's free plan, so the first visit after a quiet spell takes 30 to 50 seconds to wake up.
+
 ![City overview: budget, spend, open flags and wards over budget](docs/screenshots/overview.jpg)
 
 ## Table of contents
 
 - [About](#about)
+- [Live demo](#live-demo)
 - [Getting started](#getting-started)
 - [Usage](#usage)
 - [Architecture](#architecture)
@@ -18,6 +22,7 @@ Follow each rupee of Mumbai's monsoon road spend, from complaint to repair to ou
 - [Database](#database)
 - [API reference](#api-reference)
 - [Development](#development)
+- [Deployment](#deployment)
 - [Known limits](#known-limits)
 - [Contributing](#contributing)
 - [License](#license)
@@ -52,9 +57,27 @@ have already computed; it does not decide what is flagged.
 |---|---|
 | Web app | Flutter (Dart SDK ^3.13.1), flutter_riverpod 3.5, go_router 18.1, dio 5.11, intl 0.20, flutter_map 8.3 |
 | API | Node.js, Express 5.3, TypeScript 7.0, Zod 4.6 |
-| Data | PostgreSQL 17 (Docker), Prisma 6.19 |
+| Data | PostgreSQL 17 (Docker locally, Neon in production), Prisma 6.19 |
 | AI | @anthropic-ai/sdk 1.12 (`claude-haiku-5-5` for the pipeline, `claude-sonnet-5-5` for Ask and summaries) |
+| Hosting | Render web service (API and web app on one URL), Neon Postgres |
 | Tests | Vitest 4.1 with supertest (API), flutter_test (web) |
+
+---
+
+## Live demo
+
+[bmc-sathi.onrender.com](https://bmc-sathi.onrender.com) runs the same code and data as this repository.
+
+| Sign in as | To see |
+|---|---|
+| City auditor | The city overview, every ward, the full flag queue and rule settings |
+| Ward officer · Ward E | One ward's money trail, its flags, and the New record form |
+| Citizen | The public view: money trail, scorecards, plan and trail |
+
+![Sign-in page with the three demo accounts](docs/screenshots/login.jpg)
+
+Anything you change on the live site (a flag decision, a setting, a new record) is saved to the shared demo
+database and seen by the next visitor.
 
 ---
 
@@ -145,9 +168,9 @@ flutter run -d web-server --web-port 5173 --web-hostname localhost \
 
    ![Ward money trail with a written summary](docs/screenshots/ward-money-trail.jpg)
 
-3. **Flags → Possible double billing**: two jobs side by side, with the fields that match. Record a decision.
+3. **Flags → Possible double billing**: the queue on the left, and the two jobs side by side on the right with the fields that match. Record a decision.
 
-   ![Double-billing evidence: two jobs on the same road, three days apart](docs/screenshots/flag-evidence.jpg)
+   ![Flag queue with the double-billing evidence panel: two jobs on the same road, three days apart](docs/screenshots/flag-evidence.jpg)
 
 4. **Contractors**: three measures against similar jobs.
 
@@ -158,7 +181,13 @@ flutter run -d web-server --web-port 5173 --web-hostname localhost \
    ![Next-rupee plan with a score breakdown](docs/screenshots/plan.jpg)
 
 6. **Settings** (auditor): change a threshold or risk weight. Flags, scorecards and the plan update at once.
+
+   ![Rule settings: billing thresholds and the six risk weights](docs/screenshots/settings.jpg)
+
 7. **New record** (ward officer): enter a work order billed well above the rate card; it is flagged on save.
+
+   ![New record form for a ward officer](docs/screenshots/intake.jpg)
+
 8. **Trail**: search a complaint id, work order id, road or locality.
 
    ![Trail: translated complaints, the issue and matching social posts](docs/screenshots/trail.jpg)
@@ -218,8 +247,9 @@ recorded decision or a changed setting takes effect on the next read without re-
 │   │   │   ├── modules/           # one router per API area
 │   │   │   ├── middleware/        # sign-in and role checks
 │   │   │   ├── lib/               # db client, errors, geometry, shared rules, Claude helper
-│   │   │   ├── app.ts             # Express app
+│   │   │   ├── app.ts             # Express app; also serves public/
 │   │   │   └── server.ts          # entry point
+│   │   ├── public/                # release build of the web app, served in production
 │   │   └── test/api.test.ts       # API tests against the loaded database
 │   └── web/
 │       ├── lib/
@@ -383,13 +413,54 @@ To use the restored copy, change the database name at the end of `DATABASE_URL` 
 
 ---
 
+## Deployment
+
+The live demo is one Render web service plus a Neon Postgres database. The API serves the web app from
+`apps/api/public`, so both share one URL and no CORS setting is needed.
+
+```mermaid
+flowchart LR
+  B[Browser] --> R[Render web service<br/>Express API + Flutter build]
+  R --> N[(Neon Postgres 17)]
+  R -. Ask, summaries .-> C[Claude API]
+```
+
+**Render service settings**
+
+| Setting | Value |
+|---|---|
+| Root directory | `apps/api` |
+| Build command | `npm ci && npx prisma generate` |
+| Start command | `npx tsx src/server.ts` |
+| Branch | `main`, auto-deploy on every push |
+| Environment | `DATABASE_URL` (Neon pooled), `DIRECT_URL` (Neon direct), `JWT_SECRET`, `ANTHROPIC_API_KEY`, `NODE_VERSION=22` |
+
+**Database.** The Neon database is a copy of a fully loaded local one, so the pipeline never runs on Render:
+
+```bash
+docker exec bmc-sathi-db pg_dump -U sathi -d sathi --no-owner --no-privileges > sathi.sql
+docker run --rm -i postgres:17 psql "<neon direct url>" -v ON_ERROR_STOP=1 < sathi.sql
+```
+
+**Web app.** Render cannot build Flutter, so the release build is committed. After any change under `apps/web`, rebuild
+it with a same-origin API path and copy it into the API before pushing:
+
+```bash
+cd apps/web
+flutter build web --release --dart-define=API_BASE=/api/v1
+rm -rf ../api/public && cp -R build/web ../api/public
+```
+
+---
+
 ## Known limits
 
 - Scores and matches depend on the synthetic dataset; none of it has been run on real BMC data.
 - Claude's reading of complaints (translation, category, severity) and its matching of social posts were spot-checked, not measured against a labelled set.
 - `npm run db:summarise` is not part of `db:setup`. Summaries are not rewritten automatically when figures change; the page marks them as written before recent changes until it is run again.
 - The Ask rate limit (10 questions a minute per user) is kept in the API's memory, so it resets on restart and is not shared between instances.
-- There is no deployment configuration; only the local Docker database is set up.
+- The live demo is on Render's free plan: it sleeps when idle, and all visitors share one database, so decisions and settings changed there stay changed.
+- The web build in `apps/api/public` is updated by hand (see [Deployment](#deployment)); a push that changes only `apps/web` does not change the live site.
 - The API has no linter configured, and no CI runs the tests.
 - The overview map uses real BMC ward boundaries (`apps/web/assets/geo/wards.geojson`) over OpenStreetMap's public tile server, so it needs a network connection, and that server is not meant for heavy use. Everything plotted on it (spend, flags) is synthetic. `data/wards.geojson` is the challenge's simplified file and is no longer drawn.
 
