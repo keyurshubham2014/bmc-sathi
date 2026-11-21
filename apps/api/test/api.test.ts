@@ -156,6 +156,11 @@ describe("next-rupee plan", () => {
 });
 
 describe("settings", () => {
+  it("rejects a fair-chance share outside 0 to 1", async () => {
+    const r = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { fair_chance_pct: 1.5 } });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toContain("between 0 and 1");
+  });
   it("is for auditors only and keeps the weights at 100", async () => {
     expect((await api().get("/api/v1/settings").set(as("officer.e"))).status).toBe(403);
     const bad = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { w_traffic: 40 } });

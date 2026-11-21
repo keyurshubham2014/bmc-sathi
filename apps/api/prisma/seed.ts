@@ -13,6 +13,7 @@ const settings: [string, number, string][] = [
   ["band_min_jobs", 30, "Fewest jobs needed before a scorecard band is shown"],
   ["band_z", 2, "Gap from similar jobs (z) needed to say above or below"],
   ["band_z_strong", 3, "Gap from similar jobs (z) needed to say well above or well below"],
+  ["fair_chance_pct", 0.5, "Share of similar jobs whose assigned-to-done time must fit in the time left for a job to count as having enough time"],
   ["w_severity", 30, "Risk weight: severity"],
   ["w_access", 15, "Risk weight: hospital or school access"],
   ["w_safety", 15, "Risk weight: accident record"],

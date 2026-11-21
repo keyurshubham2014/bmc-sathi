@@ -31,7 +31,16 @@ check("ward money rows", await one(`SELECT COUNT(*) n FROM v_ward_money`), 24);
 check("ward spend adds up to city spend", await one(`SELECT (SELECT SUM(spend) FROM v_ward_money) - (SELECT SUM(cost_inr) FROM work_order) n`), 0);
 // Reference value holds only while no intake rows exist.
 if ((await one(`SELECT COUNT(*) n FROM work_order WHERE source <> 'import'`)) === 0)
+{
   check("wards over budget", await one(`SELECT COUNT(*) n FROM v_ward_money WHERE spend_share > 1`), 6);
+  check("delay rows = work orders with a complaint", await one(`SELECT COUNT(*) n FROM v_work_order_delay`), 2454);
+  check("misses: expired before assignment", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE miss_cause='expired_before_assignment'`), 441);
+  check("misses: too little time left", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE miss_cause='too_little_time_left'`), 700);
+  check("misses: had time", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE miss_cause='had_time'`), 94);
+}
+check("missed jobs with no cause", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE NOT sla_met AND miss_cause IS NULL`), 0);
+check("negative waits", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE hours_to_assign < 0`), 0);
+check("delay rows without a complaint", await one(`SELECT COUNT(*) n FROM v_work_order_delay d WHERE NOT EXISTS (SELECT 1 FROM work_order_complaint l WHERE l.work_order_id = d.work_order_id)`), 0);
 
 // After enrich and group have run.
 if ((await one(`SELECT COUNT(*) n FROM issue`)) > 0) {

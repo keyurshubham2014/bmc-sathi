@@ -1,7 +1,7 @@
 -- All audit and money views. Rerunnable: drops and recreates everything.
 -- Rules read thresholds from the setting table, so they change without a redeploy.
 
-DROP VIEW IF EXISTS v_plan, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
+DROP VIEW IF EXISTS v_work_order_delay, v_plan, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
 
 CREATE OR REPLACE FUNCTION cfg(k text) RETURNS double precision
 LANGUAGE sql STABLE AS $$ SELECT value FROM setting WHERE key = k $$;
@@ -34,6 +34,30 @@ CROSS JOIN LATERAL (
 ) x
 LEFT JOIN (SELECT date, MAX(rainfall_mm) AS mm FROM rainfall_daily GROUP BY date) rn
        ON rn.date = COALESCE(w.completed_at, w.assigned_at)::date;
+
+-- Each job's clock split at assignment: the wait before it (ward office) and the work after it (contractor).
+-- The clock starts at the first linked complaint, so jobs with no complaint are left out.
+CREATE VIEW v_work_order_delay AS
+WITH d AS (
+  SELECT w.work_order_id, w.ward_code, w.contractor_id, w.work_type, w.repair_method, w.rain_band, w.ward_type,
+         w.sla_hours, w.sla_met, f.first_complaint_at,
+         GREATEST(EXTRACT(EPOCH FROM (w.assigned_at - f.first_complaint_at)) / 3600, 0)::float8 AS hours_to_assign,
+         (EXTRACT(EPOCH FROM (w.completed_at - w.assigned_at)) / 3600)::float8                 AS hours_to_do
+  FROM v_work_order w
+  JOIN (SELECT l.work_order_id, MIN(c.received_at) AS first_complaint_at
+        FROM work_order_complaint l JOIN complaint c USING (complaint_id) GROUP BY 1) f USING (work_order_id)
+),
+t AS (  -- what such work typically takes once assigned
+  SELECT work_type, percentile_cont(cfg('fair_chance_pct')) WITHIN GROUP (ORDER BY hours_to_do) AS typical_hours
+  FROM d GROUP BY 1
+)
+SELECT d.*, t.typical_hours,
+       (d.sla_hours - d.hours_to_assign >= t.typical_hours) AS fair_chance,
+       CASE WHEN d.sla_met IS NOT FALSE                              THEN NULL
+            WHEN d.hours_to_assign >= d.sla_hours                    THEN 'expired_before_assignment'
+            WHEN d.sla_hours - d.hours_to_assign >= t.typical_hours  THEN 'had_time'
+            ELSE 'too_little_time_left' END AS miss_cause
+FROM d JOIN t USING (work_type);
 
 -- Flags. Identity is (flag_type, work_order_id), so decisions survive recomputation.
 CREATE VIEW v_flag AS
