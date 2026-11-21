@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../core/app_state.dart';
 import '../../core/format.dart' as fmt;
@@ -13,14 +13,15 @@ import '../../core/widgets.dart';
 final wardsProvider = FutureProvider<List<Map<String, dynamic>>>(
     (ref) async => List<Map<String, dynamic>>.from((await apiGet(ref, '/wards'))['items']));
 
-/// Ward outlines from the bundled file: code to a ring of (lon, lat) points.
-final wardShapesProvider = FutureProvider<Map<String, List<Offset>>>((ref) async {
+/// Ward outlines from the bundled file (OpenCity, CC0): code to its rings of points, largest first.
+final wardShapesProvider = FutureProvider<Map<String, List<List<LatLng>>>>((ref) async {
   final geo = jsonDecode(await rootBundle.loadString('assets/geo/wards.geojson'));
   return {
     for (final f in geo['features'])
       f['properties']['ward_code'] as String: [
-        for (final p in f['geometry']['coordinates'][0]) Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ],
+        for (final poly in f['geometry']['coordinates'])
+          [for (final p in poly[0]) LatLng((p[1] as num).toDouble(), (p[0] as num).toDouble())],
+      ]..sort((x, y) => y.length - x.length),
   };
 });
 
@@ -206,76 +207,79 @@ class _WardTable extends ConsumerWidget {
   }
 }
 
-/// Ward outlines shaded by spend against budget. No background tiles, so it needs no network.
+/// Real ward outlines shaded by spend against budget, over OpenStreetMap tiles (needs a network for the tiles).
 class WardMap extends StatelessWidget {
   const WardMap({super.key, required this.shapes, required this.wards, required this.selected, required this.onTap, required this.onOpen});
-  final Map<String, List<Offset>> shapes;
+  final Map<String, List<List<LatLng>>> shapes;
   final List<Map<String, dynamic>> wards;
   final String? selected;
   final void Function(String code) onTap, onOpen;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (_, box) {
-        final size = box.biggest;
-        final paths = _project(shapes, size);
-        String? hit(Offset p) => paths.entries.where((e) => e.value.contains(p)).map((e) => e.key).firstOrNull;
-        return GestureDetector(
-          onTapUp: (d) {
-            final code = hit(d.localPosition);
-            if (code == null) return;
-            code == selected ? onOpen(code) : onTap(code);
-          },
-          onDoubleTapDown: (d) {
-            final code = hit(d.localPosition);
-            if (code != null) onOpen(code);
-          },
-          child: CustomPaint(
-            size: size,
-            painter: _MapPainter(paths, {for (final w in wards) w['ward_code'] as String: w['spend_share'] as num}, selected, SathiColors.of(context), Theme.of(context).textTheme.labelMedium!),
+  Widget build(BuildContext context) {
+    final c = SathiColors.of(context);
+    final label = Theme.of(context).textTheme.labelMedium!;
+    final share = {for (final w in wards) w['ward_code'] as String: w['spend_share'] as num};
+    String? hit(LatLng p) => shapes.entries.where((e) => e.value.any((ring) => insideRing(p, ring))).map((e) => e.key).firstOrNull;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(kRadius),
+      child: FlutterMap(
+        options: MapOptions(
+          initialCameraFit: CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints([for (final rings in shapes.values) ...rings.first]),
+            // Extra room at the bottom for the attribution line.
+            padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.md, 36),
           ),
-        );
-      });
-
-  /// Fits all outlines into the box, correcting longitude for Mumbai's latitude.
-  static Map<String, Path> _project(Map<String, List<Offset>> shapes, Size size) {
-    final all = shapes.values.expand((r) => r);
-    final minX = all.map((p) => p.dx).reduce(math.min), maxX = all.map((p) => p.dx).reduce(math.max);
-    final minY = all.map((p) => p.dy).reduce(math.min), maxY = all.map((p) => p.dy).reduce(math.max);
-    final k = math.cos((minY + maxY) / 2 * math.pi / 180);
-    final scale = math.min(size.width / ((maxX - minX) * k), size.height / (maxY - minY));
-    final ox = (size.width - (maxX - minX) * k * scale) / 2, oy = (size.height - (maxY - minY) * scale) / 2;
-    return {
-      for (final e in shapes.entries)
-        e.key: (Path()..addPolygon([for (final p in e.value) Offset(ox + (p.dx - minX) * k * scale, oy + (maxY - p.dy) * scale)], true)),
-    };
-  }
-}
-
-class _MapPainter extends CustomPainter {
-  _MapPainter(this.paths, this.share, this.selected, this.c, this.label);
-  final Map<String, Path> paths;
-  final Map<String, num> share;
-  final String? selected;
-  final SathiColors c;
-  final TextStyle label;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final e in paths.entries) {
-      final step = shareStep(share[e.key] ?? 0);
-      canvas.drawPath(e.value, Paint()..color = c.mapScale[step]);
-      canvas.drawPath(e.value, Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = e.key == selected ? 3 : 1
-        ..color = e.key == selected ? c.textPrimary : c.surface);
-    }
-    // Labels on top, so no outline covers them.
-    for (final e in paths.entries) {
-      final tp = TextPainter(text: TextSpan(text: e.key, style: label.copyWith(color: c.onMapScale[shareStep(share[e.key] ?? 0)], fontWeight: FontWeight.w600)), textDirection: TextDirection.ltr)..layout();
-      tp.paint(canvas, e.value.getBounds().center - Offset(tp.width / 2, tp.height / 2));
-    }
+          interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+          // First tap selects a ward, a second tap on it opens it.
+          onTap: (_, p) {
+            final code = hit(p);
+            if (code != null) code == selected ? onOpen(code) : onTap(code);
+          },
+        ),
+        children: [
+          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'bmc_sathi'),
+          PolygonLayer(polygons: [
+            for (final e in shapes.entries)
+              for (final ring in e.value)
+                Polygon(
+                  points: ring,
+                  color: c.mapScale[shareStep(share[e.key] ?? 0)].withValues(alpha: 0.78),
+                  borderColor: e.key == selected ? c.textPrimary : c.surface,
+                  borderStrokeWidth: e.key == selected ? 3 : 1,
+                ),
+          ]),
+          // Labels as markers: the polygon layer hides a label that does not fit its outline, which drops narrow wards.
+          MarkerLayer(markers: [
+            for (final e in shapes.entries)
+              Marker(
+                point: _centre(e.value.first),
+                width: 40,
+                height: 18,
+                child: IgnorePointer(
+                  child: Center(child: Text(e.key, style: label.copyWith(color: c.onMapScale[shareStep(share[e.key] ?? 0)], fontWeight: FontWeight.w600))),
+                ),
+              ),
+          ]),
+          const SimpleAttributionWidget(source: Text('OpenStreetMap contributors · wards: OpenCity')),
+        ],
+      ),
+    );
   }
 
-  @override
-  bool shouldRepaint(_MapPainter old) => old.selected != selected || old.share != share || old.c != c;
+  /// Middle of a ring's bounding box: close enough to place a label.
+  static LatLng _centre(List<LatLng> ring) => LatLngBounds.fromPoints(ring).center;
+
+  /// Ray casting: is the point inside the ring?
+  static bool insideRing(LatLng p, List<LatLng> ring) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final a = ring[i], b = ring[j];
+      if ((a.latitude > p.latitude) != (b.latitude > p.latitude) &&
+          p.longitude < (b.longitude - a.longitude) * (p.latitude - a.latitude) / (b.latitude - a.latitude) + a.longitude) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
 }

@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'package:bmc_sathi/core/format.dart';
 import 'package:bmc_sathi/core/strings.dart';
 import 'package:bmc_sathi/core/theme.dart';
+import 'package:bmc_sathi/features/overview/city_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 
 double _lum(Color c) {
   double f(double v) => v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
@@ -73,4 +75,11 @@ void main() {
       }
     });
   }
+
+  test('a tap is matched to the ward outline that contains it', () {
+    const square = [LatLng(19.0, 72.8), LatLng(19.0, 72.9), LatLng(19.1, 72.9), LatLng(19.1, 72.8), LatLng(19.0, 72.8)];
+    expect(WardMap.insideRing(const LatLng(19.05, 72.85), square), isTrue);
+    expect(WardMap.insideRing(const LatLng(19.05, 72.95), square), isFalse);
+    expect(WardMap.insideRing(const LatLng(19.2, 72.85), square), isFalse);
+  });
 }

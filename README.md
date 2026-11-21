@@ -50,7 +50,7 @@ have already computed; it does not decide what is flagged.
 
 | Layer | Technology |
 |---|---|
-| Web app | Flutter (Dart SDK ^3.13.1), flutter_riverpod 3.5, go_router 18.1, dio 5.11, intl 0.20 |
+| Web app | Flutter (Dart SDK ^3.13.1), flutter_riverpod 3.5, go_router 18.1, dio 5.11, intl 0.20, flutter_map 8.3 |
 | API | Node.js, Express 5.3, TypeScript 7.0, Zod 4.6 |
 | Data | PostgreSQL 17 (Docker), Prisma 6.19 |
 | AI | @anthropic-ai/sdk 1.12 (`claude-haiku-5-5` for the pipeline, `claude-sonnet-5-5` for Ask and summaries) |
@@ -140,7 +140,7 @@ flutter run -d web-server --web-port 5173 --web-hostname localhost \
 
 ### A walk through the app
 
-1. **Overview** (auditor): city totals, the ward map and the wards over budget.
+1. **Overview** (auditor): city totals, the ward map and the wards over budget. Tap a ward to select it, tap again to open it.
 2. **Ward → Money trail**: spend by contractor, method and week. Each figure opens its work orders.
 
    ![Ward money trail with a written summary](docs/screenshots/ward-money-trail.jpg)
@@ -383,7 +383,7 @@ To use the restored copy, change the database name at the end of `DATABASE_URL` 
 - The Ask rate limit (10 questions a minute per user) is kept in the API's memory, so it resets on restart and is not shared between instances.
 - There is no deployment configuration; only the local Docker database is set up.
 - The API has no linter configured, and no CI runs the tests.
-- The ward map is drawn from the synthetic ward boundaries in `data/wards.geojson`, not real ones.
+- The overview map uses real BMC ward boundaries (`apps/web/assets/geo/wards.geojson`) over OpenStreetMap's public tile server, so it needs a network connection, and that server is not meant for heavy use. Everything plotted on it (spend, flags) is synthetic. `data/wards.geojson` is the challenge's simplified file and is no longer drawn.
 
 ---
 
@@ -402,3 +402,5 @@ Keyur Patel · [github.com/keyurshubham2014](https://github.com/keyurshubham2014
 ## Acknowledgments
 
 Thanks to Claude Impact Lab Mumbai for the "Follow the Rupee: Mumbai Monsoon Roads" challenge and its synthetic dataset. The original brief is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
+
+Ward boundaries are from OpenCity, via [bharatlas.com](https://bharatlas.com/view/wards_mumbai), under CC0. Map tiles are © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
