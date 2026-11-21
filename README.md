@@ -355,6 +355,14 @@ flutter test       # unit tests: money formatting, strings, theme contrast
 flutter analyze    # static analysis, configured in analysis_options.yaml
 ```
 
+For a demo, serve a release build instead of `flutter run`; pages load in a few seconds instead of fifteen:
+
+```bash
+cd apps/web
+flutter build web --release
+python3 -m http.server 5173 --bind localhost -d build/web
+```
+
 To start from an empty database: `npx prisma migrate reset` in `apps/api`, then `npm run db:setup`.
 
 ### Database dump and restore

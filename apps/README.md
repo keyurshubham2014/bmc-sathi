@@ -25,6 +25,9 @@ cd apps/web
 flutter run -d web-server --web-port 5173 --web-hostname localhost
 ```
 
+For the demo itself, serve a release build (faster to load): `flutter build web --release`, then
+`python3 -m http.server 5173 --bind localhost -d build/web` from `apps/web`.
+
 Open http://localhost:5173 and tap a demo account: ward officer (Ward E), city auditor, or citizen.
 The password is `DEMO_PASSWORD` in `apps/api/.env`.
 

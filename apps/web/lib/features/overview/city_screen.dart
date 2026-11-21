@@ -221,16 +221,22 @@ class WardMap extends StatelessWidget {
     final label = Theme.of(context).textTheme.labelMedium!;
     final share = {for (final w in wards) w['ward_code'] as String: w['spend_share'] as num};
     String? hit(LatLng p) => shapes.entries.where((e) => e.value.any((ring) => insideRing(p, ring))).map((e) => e.key).firstOrNull;
+    final bounds = LatLngBounds.fromPoints([for (final rings in shapes.values) ...rings.first]);
     return ClipRRect(
       borderRadius: BorderRadius.circular(kRadius),
       child: FlutterMap(
         options: MapOptions(
           initialCameraFit: CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints([for (final rings in shapes.values) ...rings.first]),
+            bounds: bounds,
             // Extra room at the bottom for the attribution line.
             padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.md, 36),
           ),
-          interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+          // No wheel zoom, so scrolling the page over the map scrolls the page. No double-tap zoom, so taps act at once.
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.drag | InteractiveFlag.flingAnimation | InteractiveFlag.pinchZoom | InteractiveFlag.pinchMove,
+          ),
+          minZoom: 9,
+          cameraConstraint: CameraConstraint.containCenter(bounds: bounds),
           // First tap selects a ward, a second tap on it opens it.
           onTap: (_, p) {
             final code = hit(p);
@@ -261,7 +267,7 @@ class WardMap extends StatelessWidget {
                 ),
               ),
           ]),
-          const SimpleAttributionWidget(source: Text('OpenStreetMap contributors · wards: OpenCity')),
+          const SimpleAttributionWidget(source: Text('OpenStreetMap · OpenCity')),
         ],
       ),
     );
