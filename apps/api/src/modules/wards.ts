@@ -39,7 +39,7 @@ const MISS_CAUSES = ["expired_before_assignment", "too_little_time_left", "had_t
 
 /** The work orders behind any figure on a ward or contractor page. */
 export const workOrderQuery = z.object({
-  filter: z.enum(["all", "reopened", "dlp", "flagged", "sla_missed", "overbilled", "fair_chance", ...MISS_CAUSES]).default("all"),
+  filter: z.enum(["all", "reopened", "dlp", "flagged", "sla_missed", "overbilled", "fair_chance", "followed_up", ...MISS_CAUSES]).default("all"),
   contractor_id: z.string().optional(),
   method: z.string().optional(),
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -53,6 +53,7 @@ export async function listWorkOrders(scope: Prisma.Sql, q: z.infer<typeof workOr
   if (q.filter === "sla_missed") where.push(Prisma.sql`sla_met = false`);
   if (q.filter === "overbilled") where.push(Prisma.sql`cost_ratio > cfg('overbill_ratio')`);
   if (q.filter === "flagged") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_flag WHERE tier = 'flag')`);
+  if (q.filter === "followed_up") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_followup WHERE followup_work_order_id IS NOT NULL)`);
   if (q.filter === "fair_chance") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_work_order_delay WHERE fair_chance)`);
   if ((MISS_CAUSES as readonly string[]).includes(q.filter))
     where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_work_order_delay WHERE miss_cause = ${q.filter})`);

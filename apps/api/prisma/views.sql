@@ -1,7 +1,7 @@
 -- All audit and money views. Rerunnable: drops and recreates everything.
 -- Rules read thresholds from the setting table, so they change without a redeploy.
 
-DROP VIEW IF EXISTS v_work_order_delay, v_plan, v_ward_recoverable, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
+DROP VIEW IF EXISTS v_followup, v_work_order_delay, v_plan, v_ward_recoverable, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
 
 CREATE OR REPLACE FUNCTION cfg(k text) RETURNS double precision
 LANGUAGE sql STABLE AS $$ SELECT value FROM setting WHERE key = k $$;
@@ -58,6 +58,20 @@ SELECT d.*, t.typical_hours,
             WHEN d.sla_hours - d.hours_to_assign >= t.typical_hours  THEN 'had_time'
             ELSE 'too_little_time_left' END AS miss_cause
 FROM d JOIN t USING (work_type);
+
+-- Each re-opened job and the next job on the same road and work type within 30 days of it, if there was one.
+-- The link is inferred from place, kind of work and date: "followed by another job", not proof it redid this one.
+CREATE VIEW v_followup AS
+SELECT w.work_order_id, w.contractor_id, w.ward_code, w.cost_inr,
+       n.work_order_id AS followup_work_order_id, n.cost_inr AS followup_cost, n.contractor_id AS followup_contractor_id
+FROM work_order w
+LEFT JOIN LATERAL (
+  SELECT n.work_order_id, n.cost_inr, n.contractor_id FROM work_order n
+  WHERE n.road_id = w.road_id AND n.work_type = w.work_type
+    AND n.assigned_at > w.completed_at AND n.assigned_at <= w.completed_at + interval '30 days'
+  ORDER BY n.assigned_at, n.work_order_id LIMIT 1
+) n ON true
+WHERE w.reopened_within_30d;
 
 -- Flags. Identity is (flag_type, work_order_id), so decisions survive recomputation.
 CREATE VIEW v_flag AS

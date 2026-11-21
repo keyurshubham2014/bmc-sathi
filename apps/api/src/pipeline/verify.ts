@@ -45,6 +45,8 @@ check("funded items that recovery would unfund", await one(`SELECT COUNT(*) n FR
 if ((await one(`SELECT (SELECT COUNT(*) FROM work_order WHERE source <> 'import') + (SELECT COUNT(*) FROM flag_decision) n`)) === 0) {
   check("recoverable if every flag were confirmed (rupees)", await one(`SELECT SUM(possible_total) n FROM v_ward_recoverable`), 33_467_546);
   check("recoverable already confirmed", await one(`SELECT SUM(confirmed_total) n FROM v_ward_recoverable`), 0);
+  check("re-opened jobs", await one(`SELECT COUNT(*) n FROM v_followup`), 611);
+  check("re-opened jobs followed by another job", await one(`SELECT COUNT(followup_work_order_id) n FROM v_followup`), 336);
   check("plan items funded if every flag were recovered", await one(`SELECT COUNT(*) n FROM v_plan WHERE within_possible`), 640);
 }
 check("missed jobs with no cause", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE NOT sla_met AND miss_cause IS NULL`), 0);

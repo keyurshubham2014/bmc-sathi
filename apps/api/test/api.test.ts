@@ -159,6 +159,23 @@ describe("scorecards", () => {
     expect(prompt).not.toMatch(/ward office|prefer it/);
     expect(prompt).toContain("give both");
   });
+  it("counts what failed fixes cost a second time", async () => {
+    const s = (await api().get("/api/v1/contractors/CT04").set(as("citizen"))).body.scorecard;
+    expect(s.redo.reopened_jobs).toBe(116);
+    expect(s.redo.followed_up_jobs).toBe(70);
+    expect(s.redo.followup_jobs).toBeLessThanOrEqual(s.redo.followed_up_jobs);
+    expect(s.redo.followup_by_other).toBeLessThanOrEqual(s.redo.followed_up_jobs);
+    const jobs = await api().get("/api/v1/contractors/CT04/work-orders?filter=followed_up&limit=1").set(as("citizen"));
+    expect(jobs.body.total).toBe(s.redo.followed_up_jobs);
+    const reopened = await api().get("/api/v1/contractors/CT04/work-orders?filter=reopened&limit=1").set(as("citizen"));
+    expect(Number(reopened.body.total_cost)).toBe(Number(s.redo.reopened_spend));
+  });
+  it("counts a follow-up job once even when it follows two failed jobs", async () => {
+    const [row] = await db.$queryRaw<any[]>`SELECT COUNT(followup_work_order_id)::int AS links, COUNT(DISTINCT followup_work_order_id)::int AS jobs FROM v_followup WHERE ward_code = 'L'`;
+    const s = (await api().get("/api/v1/wards/L/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.redo.followed_up_jobs).toBe(row.links);
+    expect(s.redo.followup_jobs).toBe(row.jobs);
+  });
   it("shows too few jobs, not a band, for a small ward", async () => {
     const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
     expect(s.measures.speed_fair.band).toBe("too_few");
@@ -194,6 +211,14 @@ describe("next-rupee plan", () => {
       expect(after.recoverable.possible_total).toBeLessThan(before.recoverable.possible_total);
       expect(after.recoverable.confirmed_total).toBe(before.recoverable.confirmed_total);
     });
+  });
+  it("says how often a plan item's road has been worked on this season", async () => {
+    const r = (await api().get("/api/v1/wards/L/plan").set(as("citizen"))).body;
+    expect(r.items.every((i: any) => Number.isInteger(i.road_jobs) && i.road_spend != null)).toBe(true);
+    const item = r.items.find((i: any) => i.road_id);
+    const agg = await db.work_order.aggregate({ where: { road_id: item.road_id }, _count: true, _sum: { cost_inr: true } });
+    expect(item.road_jobs).toBe(agg._count);
+    expect(Number(item.road_spend)).toBe(agg._sum.cost_inr ?? 0);
   });
   it("gives a citizen the recoverable totals and what they would fund", async () => {
     const r = await planE("citizen");
