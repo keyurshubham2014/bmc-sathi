@@ -487,7 +487,8 @@ class _Legend extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 7),
-          Text(similar, style: Tok.body.copyWith(color: Tok.text2)),
+          // Flexible: "This contractor" plus this label is wider than a phone.
+          Flexible(child: Text(similar, style: Tok.body.copyWith(color: Tok.text2), overflow: TextOverflow.ellipsis)),
         ]),
       );
 }
