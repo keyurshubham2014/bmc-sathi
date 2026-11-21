@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -172,6 +173,14 @@ class _Body extends ConsumerWidget {
           ),
         ]),
       ),
+      if (!watch && (f['decision'] == 'confirmed' || f['decision'] == 'needs_explanation')) ...[
+        const SizedBox(height: 10),
+        _Draft(
+          type == 'dlp'
+              ? {'kind': 'dlp', 'road_id': w['road_id'] ?? f['road_id']}
+              : {'kind': 'billing', 'contractor_id': w['contractor_id'] ?? f['contractor_id'], 'ward_code': w['ward_code'] ?? f['ward_code']},
+        ),
+      ],
       const SizedBox(height: 14),
       Row(children: [
         Caps(t('flags.evidence')),
@@ -247,6 +256,73 @@ class _Body extends ConsumerWidget {
         (t('flags.link.contractor'), '/contractors/${c['contractor_id']}'),
       ]),
     ];
+  }
+}
+
+/// "Draft a letter": one draft for every decided flag in this flag's group, shown as text to copy.
+/// Claude writes the words when it can; the API falls back to a fixed English template.
+class _Draft extends ConsumerStatefulWidget {
+  const _Draft(this.group);
+  final Map<String, dynamic> group;
+  @override
+  ConsumerState<_Draft> createState() => _DraftState();
+}
+
+class _DraftState extends ConsumerState<_Draft> {
+  bool _busy = false, _copied = false;
+  String? _error;
+  Map<String, dynamic>? _res;
+
+  Future<void> _load(Strings t) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await ref.read(dioProvider).post('/flags/draft', data: {...widget.group, 'lang': t.lang});
+      if (mounted) setState(() => _res = Map<String, dynamic>.from(r.data));
+    } catch (e) {
+      final err = asApiError(e);
+      if (mounted) setState(() => _error = err.code == 'network' ? t('err.network') : err.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ref.watch(stringsProvider);
+    final res = _res;
+    final body = res == null ? null : '${res['draft']['title']}\n\n${res['draft']['body']}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        AppButton.outlined(t(_busy ? 'flags.draft.busy' : 'flags.draft'), icon: Ico.summary, onPressed: _busy ? null : () => _load(t)),
+        if (body != null) ...[
+          const SizedBox(width: 8),
+          AppButton.quiet(
+            t(_copied ? 'flags.draft.copied' : 'flags.draft.copy'),
+            trailingIcon: null,
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: body));
+              if (mounted) setState(() => _copied = true);
+            },
+          ),
+        ],
+      ]),
+      if (_error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_error!, style: Tok.sub.copyWith(color: Tok.red))),
+      if (res != null && body != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          [
+            t(res['source'] == 'claude' ? 'flags.draft.claude' : 'flags.draft.template'),
+            if (t.lang == 'mr' && res['lang'] != 'mr') t('flags.draft.noMr'),
+          ].join(' '),
+          style: Tok.sub,
+        ),
+        const SizedBox(height: 6),
+        _WhiteCard(child: SelectableText(body, style: Tok.sub.copyWith(color: Tok.ink, height: 1.45))),
+      ],
+    ]);
   }
 }
 
