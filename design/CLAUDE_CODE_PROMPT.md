@@ -1,6 +1,6 @@
 # Prompt for Claude Code
 
-Paste the block below into Claude Code from the root of the BMC Sathi frontend repo, after copying this folder into the repo as `design/`.
+Copy this folder into the root of the BMC Sathi frontend repo as `design/`, then paste the block below into Claude Code. Add one line at the top naming your framework and where routes and shared components live.
 
 ---
 
@@ -17,7 +17,7 @@ Goal: make the running app match these screens at desktop width in the light the
 3. Implement the screens in demo order, lifting markup and inline SVG straight from the matching HTML file and replacing the hard-coded values with our data:
    1. `01-sign-in.html` (three demo account cards)
    2. `03-ward-money-trail.html`
-   3. `06-flag-detail-double-billing.html` (queue + detail panel, decision form)
+   3. `06-flag-detail-double-billing.html` (queue + detail panel, decision form), then `05-flag-queue.html`
    4. `19-trail-no-complaint.html` and `16-trail-fixed.html` (one Trail component with five stages; empty stages use the dashed hollow node)
    5. `11-contractor-scorecard.html` and `10-contractors.html`
    6. `13-plan-within-budget.html` and `14-plan-overspent.html` (one Plan component; the budget line moves to the top when the ward is overspent)
@@ -29,5 +29,6 @@ Rules:
 - Do not restyle or "improve" the design. Match spacing, sizes, radii, colours and copy from the HTML. Where our data has a state the mockup does not show, follow the nearest pattern in `00-foundations-and-components.html` (empty, error with Retry and request id, loading skeleton).
 - Follow every rule in `DESIGN.md` → "Rules that must hold". In particular: no contractor ranking or grades, no accusatory words, amber = unreviewed, red = overspend or confirmed only, "Synthetic data" tag always visible, no BMC crest.
 - Figures marked illustrative in `DESIGN.md` come from our API, not from the mockup. Format money with the lakh/crore rules in `DESIGN.md`.
+- Apply the three normalisations listed under "Known small inconsistencies" in `DESIGN.md`.
 - Dark theme, phone layout and Marathi are out of scope for this pass. Leave the toggles in place.
 - After each screen, open it next to its PNG in `design/screens/png/` and fix visible differences before moving on. Tell me which screens are done and which are not when you stop.
