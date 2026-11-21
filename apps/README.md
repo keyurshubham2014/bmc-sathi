@@ -29,7 +29,7 @@ Open http://localhost:5173 and tap a demo account: ward officer (Ward E), city a
 The password is `DEMO_PASSWORD` in `apps/api/.env`.
 
 `npm run db:setup` is safe to rerun. For a clean slate: `npx prisma migrate reset`, then `npm run db:setup`.
-`npm test` (API, 29 tests) and `flutter test` (web) check the rules against the planted anomalies.
+`npm test` (API, 31 tests) and `flutter test` (web) check the rules against the planted anomalies.
 
 ## Demo path (about 4 minutes)
 
@@ -64,4 +64,6 @@ change `DATABASE_URL` and `DIRECT_URL`.
   per category), Ask reports that it is not set up, and no summaries or social-post labels are written.
 - With a key, Claude translates complaints, corrects the category and reads severity; its output was
   spot-checked, not measured against a labelled set.
-- Summaries are written by `npm run db:summarise`, which is not part of `db:setup`.
+- Summaries are written by `npm run db:summarise`, which is not part of `db:setup`. A summary whose figures have
+  since changed is marked as written before recent changes.
+- Fallback for the demo: dump and restore steps are in the root README under Development.

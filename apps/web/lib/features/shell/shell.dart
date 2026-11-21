@@ -70,8 +70,8 @@ class Shell extends ConsumerWidget {
               Text(t('app.name'), style: Theme.of(context).textTheme.titleLarge!.copyWith(color: c.primary)),
               if (!narrow) Text('  ·  ${t('app.module')}', style: Theme.of(context).textTheme.titleMedium!.copyWith(color: c.textSecondary)),
               const SizedBox(width: Gap.md),
-              const Flexible(child: SyntheticTag()),
-              const Spacer(),
+              // Takes all the free width, so the tag wraps by word, not by letter, on a phone.
+              const Expanded(child: Align(alignment: Alignment.centerLeft, child: SyntheticTag())),
               const LangToggle(),
               const ThemeToggle(),
               _AccountMenu(s),

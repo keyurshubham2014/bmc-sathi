@@ -1,10 +1,9 @@
 // Writes a short plain-language summary for every ward and contractor, in English and Marathi.
 // A summary is rewritten only when the figures behind it have changed (facts_hash).
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { askJson, pool, SONNET } from "../lib/claude";
 import { db } from "../lib/db";
-import { factsFor } from "../modules/ask";
+import { factsHash } from "../modules/ask";
 
 const SYSTEM = `You write a short summary of road repair spending for a Mumbai ward or a contractor, for a public dashboard read by ward staff, auditors and citizens.
 Use only the JSON facts given. Write two or three plain sentences, at most 60 words, saying what a reader should notice first: for a ward, where it stands against its budget and where the largest amounts in question are; for a contractor, how speed, durability and cost compare with similar jobs.
@@ -20,8 +19,7 @@ const subjects = [
 let written = 0, unchanged = 0;
 const failed = await pool(subjects, 4, async (s) => {
   // The citizen view of the facts: summaries are shown to every role.
-  const facts = JSON.stringify(await factsFor(s.type, s.id, false), (_k, v) => (typeof v === "bigint" ? Number(v) : v));
-  const facts_hash = createHash("sha1").update(facts).digest("hex");
+  const { facts, hash: facts_hash } = await factsHash(s.type, s.id);
   const have = await db.summary.findMany({ where: { subject_type: s.type, subject_id: s.id } });
   if (have.length === 2 && have.every((h) => h.facts_hash === facts_hash)) return void unchanged++;
   const out = await askJson(SONNET, SYSTEM, facts, Answer);

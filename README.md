@@ -298,8 +298,8 @@ Base path `/api/v1`. Every route except `POST /auth/login` needs `Authorization:
 | POST | `/intake/complaints` | Add a complaint; returns its issue and plan rank | Ward officer |
 | GET | `/settings` | Rule thresholds and risk weights | Auditor |
 | PUT | `/settings` | Change settings; the six risk weights must total 100 | Auditor |
-| POST | `/ask` | Ask a question about one ward, contractor or issue | Any role |
-| GET | `/ask/summary` | The stored summary for a ward or contractor | Any role |
+| POST | `/ask` | Ask a question about one ward, contractor or issue. Limited to 10 a minute per user | Any role |
+| GET | `/ask/summary` | The stored summary for a ward or contractor, with `stale` set when its figures have since changed | Any role |
 
 </details>
 
@@ -357,14 +357,30 @@ flutter analyze    # static analysis, configured in analysis_options.yaml
 
 To start from an empty database: `npx prisma migrate reset` in `apps/api`, then `npm run db:setup`.
 
+### Database dump and restore
+
+A dump lets you bring back a loaded database without re-running the pipeline. `*.dump` files are ignored by git.
+
+```bash
+# Save
+mkdir -p backup
+docker exec bmc-sathi-db pg_dump -U sathi -Fc sathi > backup/sathi.dump
+
+# Restore into a second database
+docker exec bmc-sathi-db psql -U sathi -d postgres -c "create database sathi_fallback"
+docker exec -i bmc-sathi-db pg_restore -U sathi -d sathi_fallback < backup/sathi.dump
+```
+
+To use the restored copy, change the database name at the end of `DATABASE_URL` and `DIRECT_URL` in `apps/api/.env` to `sathi_fallback` and restart the API.
+
 ---
 
 ## Known limits
 
 - Scores and matches depend on the synthetic dataset; none of it has been run on real BMC data.
 - Claude's reading of complaints (translation, category, severity) and its matching of social posts were spot-checked, not measured against a labelled set.
-- `npm run db:summarise` is not part of `db:setup`. Summaries are not rewritten automatically when figures change.
-- Ask has no rate limit of its own.
+- `npm run db:summarise` is not part of `db:setup`. Summaries are not rewritten automatically when figures change; the page marks them as written before recent changes until it is run again.
+- The Ask rate limit (10 questions a minute per user) is kept in the API's memory, so it resets on restart and is not shared between instances.
 - There is no deployment configuration; only the local Docker database is set up.
 - The API has no linter configured, and no CI runs the tests.
 - The ward map is drawn from the synthetic ward boundaries in `data/wards.geojson`, not real ones.

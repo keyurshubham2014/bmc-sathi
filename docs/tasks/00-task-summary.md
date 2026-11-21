@@ -1,8 +1,8 @@
 # Task Summary — BMC Sathi
 
 **Last Updated:** 2026-11-21
-**Overall Progress:** 0 / 6 tasks complete (0%)
-**Current Task:** TASK-01
+**Overall Progress:** 6 / 6 tasks complete (100%)
+**Current Task:** None (all complete)
 **Source Documents:** `docs/PRD-bmc-sathi.md`, `docs/tech-spec/`
 
 ## How to use this plan
@@ -13,12 +13,12 @@ Read this file first in any session. Then open only the task file you are execut
 
 | Task | Title | Status | Priority | Size | Depends On | Progress |
 |---|---|---|---|---|---|---|
-| TASK-01 | Data and Rules Foundation | In Review | P0 | M · 1.5 h | None | 90% |
-| TASK-02 | Sign-in and App Shell | In Review | P0 | M · 1.5 h | TASK-01 | 90% |
-| TASK-03 | Money Trail and Audit Flags | In Review | P0 | L · 2.0 h | TASK-02 | 90% |
-| TASK-04 | Complaints to Issues and the Trail | In Review | P0 | M · 1.5 h | TASK-02 | 80% |
-| TASK-05 | Scorecards and Next-Rupee Plan | In Review | P0 | M · 1.5 h | TASK-03, TASK-04 | 90% |
-| TASK-06 | Ask, Intake, Summaries and Demo Readiness | In Progress | P0 | M · 1.5 h | TASK-04, TASK-05 | 60% |
+| TASK-01 | Data and Rules Foundation | Complete | P0 | M · 1.5 h | None | 100% |
+| TASK-02 | Sign-in and App Shell | Complete | P0 | M · 1.5 h | TASK-01 | 100% |
+| TASK-03 | Money Trail and Audit Flags | Complete | P0 | L · 2.0 h | TASK-02 | 100% |
+| TASK-04 | Complaints to Issues and the Trail | Complete | P0 | M · 1.5 h | TASK-02 | 100% |
+| TASK-05 | Scorecards and Next-Rupee Plan | Complete | P0 | M · 1.5 h | TASK-03, TASK-04 | 100% |
+| TASK-06 | Ask, Intake, Summaries and Demo Readiness | Complete | P0 | M · 1.5 h | TASK-04, TASK-05 | 100% |
 
 Total estimate: 9.5 hours.
 
@@ -28,7 +28,7 @@ Status vocabulary: `Not Started`, `In Progress`, `Blocked`, `In Review`, `Comple
 
 1. TASK-01 → 2. TASK-02 → 3. TASK-03 → 4. TASK-04 → 5. TASK-05 → 6. TASK-06
 
-**Ready now (dependencies satisfied):** TASK-01
+**Ready now (dependencies satisfied):** none; all tasks complete
 **Blocked:** none. TASK-04 (Claude mode), TASK-06 (Ask, summaries) need `ANTHROPIC_API_KEY`; both have a working mode without it.
 
 TASK-03 and TASK-04 both depend only on TASK-02. Start the TASK-04 pipeline run as soon as TASK-01 is loaded if a Claude key is available, since it runs unattended.

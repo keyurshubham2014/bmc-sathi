@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Task ID | TASK-01 |
-| Status | In Review |
+| Status | Complete |
 | Priority | P0 |
 | Size | M (about 1.5 hours) |
 | Depends On | None |
@@ -130,9 +130,9 @@ Not applicable — no user-facing access. Seeded users: `officer.e` (ward_office
 
 ### 7.2 Non-Functional Checklist
 
-- [ ] No hardcoded thresholds, URLs or secrets; settings table and environment file only
-- [ ] Scripts are safe to rerun
-- [ ] Logging: one line per request with user id; no bodies, tokens or keys
+- [x] No hardcoded thresholds, URLs or secrets; settings table and environment file only
+- [x] Scripts are safe to rerun
+- [x] Logging: one line per request with user id; no bodies, tokens or keys
 
 ## 8. Validation & Testing
 
@@ -174,22 +174,22 @@ An estimate at module level, not a constraint.
 
 ## 13. Progress Status
 
-**Current status:** In Review
+**Current status:** Complete
 
 | Date | Progress | Commit |
 |---|---|---|
-| | | |
+| 2026-11-21 | Verified: verify passes on the main and the restored database, reference counts reproduced, load and views rerunnable, thresholds read from settings. | see git log |
 
 ## 14. Completion Checklist
 
-- [ ] All implementation steps complete
-- [ ] All behavioral acceptance criteria verified in the running application
-- [ ] Non-functional checklist fully ticked
-- [ ] Tests named in section 8 written and passing
-- [ ] Frontend and backend integrated end to end (no mocked data left in place)
-- [ ] Error, loading, empty, and unauthorized states verified
-- [ ] Code reviewed against the patterns established in earlier tasks
-- [ ] Assumptions documented and, where possible, confirmed
-- [ ] Task file progress log and status updated
-- [ ] `00-task-summary.md` updated
-- [ ] Validator passes
+- [x] All implementation steps complete
+- [x] All behavioral acceptance criteria verified in the running application
+- [x] Non-functional checklist fully ticked
+- [x] Tests named in section 8 written and passing
+- [x] Frontend and backend integrated end to end (no mocked data left in place)
+- [x] Error, loading, empty, and unauthorized states verified
+- [x] Code reviewed against the patterns established in earlier tasks
+- [x] Assumptions documented and, where possible, confirmed
+- [x] Task file progress log and status updated
+- [x] `00-task-summary.md` updated
+- [x] Validator passes

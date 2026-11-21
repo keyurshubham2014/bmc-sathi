@@ -1,5 +1,6 @@
 // Ask: Claude explains, in plain words, figures the rules have already computed.
 // It is given the facts for one ward, contractor or issue and nothing else, and decides nothing.
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { Router } from "express";
 import { z } from "zod";
@@ -11,10 +12,26 @@ import { scorecard } from "./contractors";
 
 export const ask = Router();
 
+// shortcut: counts live in this process's memory, move to a shared store when more than one API instance runs.
+const asked = new Map<number, number[]>();
+const ASKS_PER_MINUTE = 10;
+function rateLimit(userId: number) {
+  const now = Date.now();
+  const recent = (asked.get(userId) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= ASKS_PER_MINUTE) throw new AppError("too_many_requests", "Too many questions. Try again in a minute.");
+  asked.set(userId, [...recent, now]);
+}
+
+/** Fingerprint of the figures a summary was written from; it changes when they do. */
+export async function factsHash(type: "ward" | "contractor", id: string) {
+  const facts = JSON.stringify(await factsFor(type, id, false), (_k, v) => (typeof v === "bigint" ? Number(v) : v));
+  return { facts, hash: createHash("sha1").update(facts).digest("hex") };
+}
+
 const SYSTEM = `You answer questions for Mumbai ward staff, auditors and citizens about road repair spending.
 Answer only from the JSON facts in the user message. If the facts do not answer the question, say so in one sentence.
 The audit rules have already decided what is flagged; explain their results, do not make new accusations. A flag is a reason to look, not proof of wrongdoing.
-Rates in the facts are fractions: say them as percentages. Give rupee amounts in lakh or crore. Name the record ids (work order, complaint, issue) you relied on.
+Rates in the facts are fractions: say them as percentages. Give rupee amounts in lakh or crore. Name the record ids (work order, complaint, issue) you relied on. Never mention the JSON or its field names.
 Keep the answer under 120 words, in plain sentences with no headings or lists.`;
 
 /** The facts Claude may use. Exported so a test can check them without calling Claude. */
@@ -26,9 +43,10 @@ export async function factsFor(scope_type: "ward" | "contractor" | "issue", scop
       db.$queryRaw`SELECT contractor_name, COUNT(*)::int jobs, SUM(cost_inr)::int spend, SUM(reopened_within_30d::int)::int reopened FROM v_work_order WHERE ward_code = ${scope_id} GROUP BY 1 ORDER BY 3 DESC`,
       db.$queryRaw`SELECT flag_type, tier, COUNT(*)::int flags, SUM(amount_at_stake)::int amount_at_stake FROM v_flag WHERE ward_code = ${scope_id} GROUP BY 1, 2`,
       db.$queryRaw`SELECT rank, issue_id, road_name, category, risk_score, recommended_method, estimated_cost, within_budget, complaint_count FROM v_plan WHERE ward_code = ${scope_id} ORDER BY rank LIMIT 10`,
+      // Citizens get the same recent jobs without the rate-card comparison, which is what a flag rests on.
       canSeeFlags
         ? db.$queryRaw`SELECT work_order_id, road_name, work_type, repair_method, contractor_name, cost_inr, expected_cost, cost_ratio, assigned_at, sla_met, reopened_within_30d FROM v_work_order WHERE ward_code = ${scope_id} ORDER BY assigned_at DESC LIMIT 20`
-        : [],
+        : db.$queryRaw`SELECT work_order_id, road_name, work_type, repair_method, contractor_name, cost_inr, assigned_at, sla_met, reopened_within_30d FROM v_work_order WHERE ward_code = ${scope_id} ORDER BY assigned_at DESC LIMIT 20`,
     ]);
     return { ward: money, spend_by_contractor: by_contractor, flags, scorecard: await scorecard("ward", scope_id), top_of_plan: plan, recent_work_orders: recent };
   }
@@ -53,6 +71,7 @@ export async function factsFor(scope_type: "ward" | "contractor" | "issue", scop
 }
 
 ask.post("/", async (req, res) => {
+  rateLimit(req.user.user_id);
   const b = parse(z.object({
     question: z.string().trim().min(3).max(500),
     scope_type: z.enum(["ward", "contractor", "issue"]),
@@ -92,5 +111,6 @@ ask.post("/", async (req, res) => {
 ask.get("/summary", async (req, res) => {
   const q = parse(z.object({ type: z.enum(["ward", "contractor"]), id: z.string().max(20), lang: z.enum(["en", "mr"]).default("en") }), req.query);
   const row = await db.summary.findUnique({ where: { subject_type_subject_id_lang: { subject_type: q.type, subject_id: q.id, lang: q.lang } } });
-  res.json({ summary: row && { body: row.body, generated_at: row.generated_at } });
+  // Stale: the figures have changed since it was written, and summarise has not been run again.
+  res.json({ summary: row && { body: row.body, generated_at: row.generated_at, stale: (await factsHash(q.type, q.id)).hash !== row.facts_hash } });
 });

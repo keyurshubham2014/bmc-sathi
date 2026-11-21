@@ -241,17 +241,38 @@ describe("intake", () => {
 });
 
 describe("ask", () => {
+  it("returns 429 on the eleventh question in a minute", async () => {
+    // Too-short questions are refused before Claude is called, but still count.
+    const send = () => api().post("/api/v1/ask").set(as("citizen")).send({ question: "x", scope_type: "ward", scope_id: "E" });
+    for (let i = 0; i < 10; i++) expect((await send()).status).toBe(400);
+    expect((await send()).status).toBe(429);
+  });
+
+  it("marks a summary stale only when its figures have changed", async () => {
+    const { db } = await import("../src/lib/db");
+    const where = { subject_type_subject_id_lang: { subject_type: "ward", subject_id: "E", lang: "en" } };
+    const row = await db.summary.findUnique({ where });
+    if (!row) return; // summarise has not been run on this database
+    const get = async () => (await api().get("/api/v1/ask/summary?type=ward&id=E").set(as("citizen"))).body.summary.stale;
+    expect(await get()).toBe(false);
+    await db.summary.update({ where, data: { facts_hash: "old" } });
+    expect(await get()).toBe(true);
+    await db.summary.update({ where, data: { facts_hash: row.facts_hash } });
+  });
+
   it("keeps a ward officer to their own ward and validates input", async () => {
     const out = await api().post("/api/v1/ask").set(as("officer.e")).send({ question: "Why is spend high?", scope_type: "ward", scope_id: "B" });
     expect(out.status).toBe(403);
     const bad = await api().post("/api/v1/ask").set(as("auditor")).send({ question: "x", scope_type: "ward", scope_id: "E" });
     expect(bad.status).toBe(400);
   });
-  it("gathers facts without work-order detail for citizens", async () => {
+  it("gathers facts without the rate-card comparison for citizens", async () => {
     const { factsFor } = await import("../src/modules/ask");
     const f: any = await factsFor("ward", "E", false);
     expect(f.ward.ward_code).toBe("E");
-    expect(f.recent_work_orders).toHaveLength(0);
+    expect(f.recent_work_orders.length).toBeGreaterThan(0);
+    expect(f.recent_work_orders[0]).not.toHaveProperty("cost_ratio");
+    expect(f.recent_work_orders[0]).not.toHaveProperty("expected_cost");
     expect(f.top_of_plan.length).toBeGreaterThan(0);
   });
 });
