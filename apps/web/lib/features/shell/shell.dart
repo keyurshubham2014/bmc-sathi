@@ -24,12 +24,14 @@ class Shell extends ConsumerStatefulWidget {
 class _ShellState extends ConsumerState<Shell> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
+  final _scaffold = GlobalKey<ScaffoldState>();
 
   @override
   void didUpdateWidget(Shell old) {
     super.didUpdateWidget(old);
     // A panel opened with showDetail belongs to the page it was opened on.
     if (old.location == widget.location) return;
+    _scaffold.currentState?.closeDrawer(); // phone: a nav tap in the drawer lands on the new page
     Future.microtask(() {
       if (mounted) ref.read(detailProvider.notifier).close();
     });
@@ -53,9 +55,29 @@ class _ShellState extends ConsumerState<Shell> {
     ].where((i) => i.selected).firstOrNull;
     final detail = ref.watch(detailProvider);
     void focusSearch() => _searchFocus.requestFocus();
+    final phone = isPhone(context);
+    final sidebar = _Sidebar(nav: nav, search: _search, searchFocus: _searchFocus);
+    // About/Help open the detail panel, which sits under the drawer on a phone.
+    ref.listen(detailProvider, (_, d) {
+      if (d != null) _scaffold.currentState?.closeDrawer();
+    });
 
-    return Scaffold(
+    final onBack = ref.watch(topBarProvider)?.onBack;
+    // Android back: close the panel, then follow the page's own back arrow, then leave the app.
+    return PopScope(
+      canPop: detail == null && onBack == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (detail != null) {
+          ref.read(detailProvider.notifier).close();
+        } else {
+          onBack?.call();
+        }
+      },
+      child: Scaffold(
+      key: _scaffold,
       backgroundColor: Tok.ground,
+      drawer: phone ? Drawer(backgroundColor: Tok.shell, child: SafeArea(child: sidebar)) : null,
       body: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.keyK, control: true): focusSearch,
@@ -63,7 +85,8 @@ class _ShellState extends ConsumerState<Shell> {
         },
         child: Focus(
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            // Phone: keep clear of the status bar and notch.
+            padding: MediaQuery.paddingOf(context) + EdgeInsets.all(phone ? 6 : 12),
             child: Container(
               decoration: BoxDecoration(
                 color: Tok.shell,
@@ -74,17 +97,17 @@ class _ShellState extends ConsumerState<Shell> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(
-                    width: Tok.sidebarW,
-                    child: _Sidebar(nav: nav, search: _search, searchFocus: _searchFocus),
-                  ),
+                  if (!phone) SizedBox(width: Tok.sidebarW, child: sidebar),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
+                      padding: phone ? const EdgeInsets.all(8) : const EdgeInsets.fromLTRB(4, 12, 12, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _TopBar(fallbackTitle: selected?.label ?? t('app.name')),
+                          _TopBar(
+                            fallbackTitle: selected?.label ?? t('app.name'),
+                            onMenu: phone ? () => _scaffold.currentState?.openDrawer() : null,
+                          ),
                           const SizedBox(height: Tok.gapPanels),
                           if (widget.notice == 'notAllowed') ...[
                             Container(
@@ -129,6 +152,7 @@ class _ShellState extends ConsumerState<Shell> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -357,15 +381,16 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
               },
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F2F4),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Tok.line),
+          if (!isPhone(context)) // no keyboard shortcut on a phone
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F2F4),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Tok.line),
+              ),
+              child: Text('Ctrl K', style: Tok.caps.copyWith(color: Tok.text2, letterSpacing: 0)),
             ),
-            child: Text('Ctrl K', style: Tok.caps.copyWith(color: Tok.text2, letterSpacing: 0)),
-          ),
         ],
       ),
     );
@@ -615,8 +640,11 @@ class _MiniSwitch extends StatelessWidget {
 // ---------------------------------------------------------------------------------------------------
 
 class _TopBar extends ConsumerWidget {
-  const _TopBar({required this.fallbackTitle});
+  const _TopBar({required this.fallbackTitle, this.onMenu});
   final String fallbackTitle;
+
+  /// Set on a phone: opens the drawer that holds the sidebar.
+  final VoidCallback? onMenu;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -697,12 +725,17 @@ class _TopBar extends ConsumerWidget {
       }
     }
 
-    return SizedBox(
+    final phone = onMenu != null;
+    final bar = SizedBox(
       height: Tok.controlH,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 0, 4, 0),
+        padding: phone ? EdgeInsets.zero : const EdgeInsets.fromLTRB(6, 0, 4, 0),
         child: Row(
           children: [
+            if (phone) ...[
+              AppIconButton(Icons.menu, tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip, onPressed: onMenu),
+              const SizedBox(width: 10),
+            ],
             if (spec?.onBack != null) ...[
               // v2: 26 px back button, radius 8, grey 14 px chevron.
               Pressable(
@@ -731,15 +764,21 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const SyntheticTag(),
-            const SizedBox(width: 8),
+            // Phone: the drawer's prototype card carries the synthetic-data note.
+            if (!phone) ...[const SyntheticTag(), const SizedBox(width: 8)],
             const LangToggle(),
             const SizedBox(width: 8),
-            _AccountButton(s),
-            if (spec?.action != null) ...[const SizedBox(width: 8), spec!.action!],
+            _AccountButton(s, compact: phone),
+            if (!phone && spec?.action != null) ...[const SizedBox(width: 8), spec!.action!],
           ],
         ),
       ),
+    );
+    if (!phone || spec?.action == null) return bar;
+    // Phone: the page action gets its own row under the title.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [bar, const SizedBox(height: 8), spec!.action!],
     );
   }
 }
@@ -795,8 +834,11 @@ class ThemeToggle extends ConsumerWidget {
 
 /// Initials, name and role; opens a menu with the disclaimer and Sign out.
 class _AccountButton extends ConsumerWidget {
-  const _AccountButton(this.s);
+  const _AccountButton(this.s, {this.compact = false});
   final Session s;
+
+  /// Initials only (phone); name and role stay in the menu.
+  final bool compact;
 
   static String initials(String name) {
     final parts = name.split(RegExp(r'[\s.]+')).where((p) => p.isNotEmpty).toList();
@@ -837,7 +879,7 @@ class _AccountButton extends ConsumerWidget {
         semanticLabel: '${t('topbar.account')}: ${s.name}, $role',
         builder: (_, hover) => Container(
           height: Tok.controlH,
-          padding: const EdgeInsets.fromLTRB(6, 0, 10, 0),
+          padding: EdgeInsets.fromLTRB(6, 0, compact ? 6 : 10, 0),
           decoration: BoxDecoration(
             color: hover ? Tok.inset : Tok.panel,
             borderRadius: BorderRadius.circular(Tok.rControl),
@@ -857,11 +899,13 @@ class _AccountButton extends ConsumerWidget {
                   style: Tok.caps.copyWith(fontSize: 11, letterSpacing: 0.2, color: Tok.tealDark, fontWeight: FontWeight.w600),
                 ),
               ),
-              const SizedBox(width: 7),
-              Text(s.name, style: Tok.body.copyWith(fontWeight: FontWeight.w500)),
-              Text(' · $role', style: Tok.body.copyWith(color: Tok.text3)),
-              const SizedBox(width: 7),
-              const Icon(Ico.chevronDown, size: 14, color: Tok.text3),
+              if (!compact) ...[
+                const SizedBox(width: 7),
+                Text(s.name, style: Tok.body.copyWith(fontWeight: FontWeight.w500)),
+                Text(' · $role', style: Tok.body.copyWith(color: Tok.text3)),
+                const SizedBox(width: 7),
+                const Icon(Ico.chevronDown, size: 14, color: Tok.text3),
+              ],
             ],
           ),
         ),

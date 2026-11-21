@@ -72,87 +72,85 @@ class _SettingsState extends ConsumerState<SettingsScreen> {
         builder: (items) {
           final byKey = {for (final s in items) '${s['key']}': s};
           final count = _groups.fold<int>(0, (n, g) => n + g.$2.where((r) => byKey.containsKey(r.$1)).length);
-          return PageBody(children: [
-            Panel(
-              child: SizedBox(
-                height: 32,
-                child: Row(children: [
-                  Text(t('settings.title'), style: Tok.section),
-                  const SizedBox(width: 16),
-                  Pill(t('settings.recalc'), tone: Tone.success, icon: Ico.info),
-                  const SizedBox(width: 8),
-                  Pill(t('settings.auditorOnly'), icon: Icons.lock_outline),
-                ]),
-              ),
-            ),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                flex: 3,
-                child: Panel(
-                  title: t('settings.thresholds'),
-                  sub: t('settings.thresholdsSub', {'n': count}),
-                  trailing: Padding(padding: const EdgeInsets.only(right: 76), child: Caps(t('settings.value'))),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    for (final (i, (group, rows)) in _groups.indexed) ...[
-                      Padding(
-                        padding: EdgeInsets.only(top: i == 0 ? 0 : 14, bottom: 4),
-                        child: Row(children: [
-                          Caps(t('settings.group.$group')),
-                          const SizedBox(width: 10),
-                          const Expanded(child: Divider(color: Tok.lineInset)),
-                          const SizedBox(width: 10),
-                          Text(t('settings.groupCount', {'n': rows.length}), style: Tok.sub),
-                        ]),
-                      ),
-                      for (final (key, unit, scale) in rows)
-                        if (byKey[key] case final s?) _row(t, s, unit == 'days' ? t('settings.unit.days') : unit, scale.toDouble()),
-                    ],
+          final phone = isPhone(context);
+          final side = [
+            _weightsPanel(t, byKey),
+            const SizedBox(height: Tok.gapPanels),
+            _whatPanel(t),
+          ];
+          final thresholds = Panel(
+            title: t('settings.thresholds'),
+            sub: t('settings.thresholdsSub', {'n': count}),
+            // Phone: the value column header has no column to sit over.
+            trailing: phone ? null : Padding(padding: const EdgeInsets.only(right: 76), child: Caps(t('settings.value'))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (final (i, (group, rows)) in _groups.indexed) ...[
+                Padding(
+                  padding: EdgeInsets.only(top: i == 0 ? 0 : 14, bottom: 4),
+                  child: Row(children: [
+                    Caps(t('settings.group.$group')),
+                    const SizedBox(width: 10),
+                    const Expanded(child: Divider(color: Tok.lineInset)),
+                    const SizedBox(width: 10),
+                    Text(t('settings.groupCount', {'n': rows.length}), style: Tok.sub),
                   ]),
                 ),
-              ),
-              const SizedBox(width: Tok.gapPanels),
-              Expanded(
-                flex: 2,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  _weightsPanel(t, byKey),
-                  const SizedBox(height: Tok.gapPanels),
-                  Panel(
-                    title: t('settings.what'),
-                    child: Column(children: [
-                      for (final (i, (icon, k)) in [(Ico.flag, 'flags'), (Ico.contractor, 'score'), (Icons.format_list_numbered, 'plan')].indexed) ...[
-                        if (i > 0) const SizedBox(height: 6),
-                        InsetCard(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                          child: Row(children: [
-                            Container(
-                              width: 26,
-                              height: 26,
-                              decoration: BoxDecoration(color: Tok.panel, borderRadius: BorderRadius.circular(7), border: Border.all(color: Tok.line)),
-                              child: Icon(icon, size: 14, color: Tok.text2),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text.rich(TextSpan(style: Tok.body, children: [
-                                TextSpan(text: t('settings.what.$k'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                                TextSpan(text: ' ${t('settings.what.${k}Sub')}'),
-                              ])),
-                            ),
-                          ]),
-                        ),
-                      ],
-                    ]),
-                  ),
-                ]),
-              ),
+                for (final (key, unit, scale) in rows)
+                  if (byKey[key] case final s?) _row(t, s, unit == 'days' ? t('settings.unit.days') : unit, scale.toDouble(), phone),
+              ],
             ]),
+          );
+          return PageBody(children: [
+            Panel(
+              // Wrap: on a phone the two pills drop under the title.
+              child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                Padding(padding: const EdgeInsets.only(right: 8), child: Text(t('settings.title'), style: Tok.section)),
+                Pill(t('settings.recalc'), tone: Tone.success, icon: Ico.info),
+                Pill(t('settings.auditorOnly'), icon: Icons.lock_outline),
+              ]),
+            ),
+            if (phone) ...[thresholds, ...side]
+            else
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(flex: 3, child: thresholds),
+                const SizedBox(width: Tok.gapPanels),
+                Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: side)),
+              ]),
           ]);
         },
       ),
     );
   }
 
+  Widget _whatPanel(Strings t) => Panel(
+      title: t('settings.what'),
+      child: Column(children: [
+        for (final (i, (icon, k)) in [(Ico.flag, 'flags'), (Ico.contractor, 'score'), (Icons.format_list_numbered, 'plan')].indexed) ...[
+          if (i > 0) const SizedBox(height: 6),
+          InsetCard(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(color: Tok.panel, borderRadius: BorderRadius.circular(7), border: Border.all(color: Tok.line)),
+                child: Icon(icon, size: 14, color: Tok.text2),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text.rich(TextSpan(style: Tok.body, children: [
+                  TextSpan(text: t('settings.what.$k'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  TextSpan(text: ' ${t('settings.what.${k}Sub')}'),
+                ])),
+              ),
+            ]),
+          ),
+        ],
+      ]),
+    );
+
   /// One threshold: name, what it does, the value box and its own Save.
-  Widget _row(Strings t, Map<String, dynamic> s, String unit, double scale) {
+  Widget _row(Strings t, Map<String, dynamic> s, String unit, double scale, bool phone) {
     final key = '${s['key']}';
     final stored = (s['value'] as num) * scale;
     final typed = _edits[key];
@@ -174,24 +172,26 @@ class _SettingsState extends ConsumerState<SettingsScreen> {
                 : _saved == key
                     ? _status(Icons.check_circle_outline, t('settings.savedRow'), Tok.tealDark)
                     : null;
+    final text = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(t('settings.k.$key'), style: Tok.emph.copyWith(fontWeight: FontWeight.w600)),
+      Text('${s['description']}', style: Tok.body.copyWith(color: Tok.text2)),
+      if (status != null) ...[const SizedBox(height: 2), status],
+    ]);
     return Container(
       margin: EdgeInsets.symmetric(vertical: dirty ? 2 : 0),
       padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
       decoration: dirty
           ? BoxDecoration(color: const Color(0xFFF1F8F6), borderRadius: BorderRadius.circular(Tok.rCard), border: Border.all(color: Tok.tealZone))
           : const BoxDecoration(border: Border(bottom: BorderSide(color: Tok.lineSoft))),
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(t('settings.k.$key'), style: Tok.emph.copyWith(fontWeight: FontWeight.w600)),
-            Text('${s['description']}', style: Tok.body.copyWith(color: Tok.text2)),
-            if (status != null) ...[const SizedBox(height: 2), status],
-          ]),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(width: 104, child: _box(key, fmt.ratio(stored), unit, invalid, (v) => _edit(key, key, v), s['value'])),
-        const SizedBox(width: 12),
-        _saveBtn(dirty && _last == key, t('action.save'), dirty && _busy == null ? () => _save(key, {key: parsed / scale}) : null),
+      // Phone: the value box and Save go under the text instead of beside it.
+      child: Flex(direction: phone ? Axis.vertical : Axis.horizontal, crossAxisAlignment: phone ? CrossAxisAlignment.start : CrossAxisAlignment.center, children: [
+        if (phone) text else Expanded(child: text),
+        SizedBox(width: 12, height: phone ? 8 : 0),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(width: 104, child: _box(key, fmt.ratio(stored), unit, invalid, (v) => _edit(key, key, v), s['value'])),
+          const SizedBox(width: 12),
+          _saveBtn(dirty && _last == key, t('action.save'), dirty && _busy == null ? () => _save(key, {key: parsed / scale}) : null),
+        ]),
       ]),
     );
   }

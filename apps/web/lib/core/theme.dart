@@ -335,6 +335,7 @@ ThemeData buildTheme(SathiColors c) {
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
+      helperMaxLines: 3, // narrow (phone) fields wrap their help text instead of cutting it
       filled: true,
       fillColor: c.surface,
       isDense: true,

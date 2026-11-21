@@ -135,36 +135,40 @@ Future<void> _loadFonts() async {
   await Future.wait([geist.load(), noto.load()]);
 }
 
+Future<void> _pumpShell(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  SharedPreferences.setMockInitialValues({
+    'session': jsonEncode(const Session(token: 't', name: 'R. Kulkarni', role: 'ward_officer', wardCode: 'E').toJson()),
+  });
+  final prefs = await SharedPreferences.getInstance();
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        prefsProvider.overrideWithValue(prefs),
+        flagSummaryProvider.overrideWith(
+          (ref, ward) async => [
+            {'flag_type': 'overbilled', 'tier': 'flag', 'decision': 'open', 'count': 11},
+            {'flag_type': 'overbilled', 'tier': 'watch', 'decision': 'open', 'count': 1},
+            {'flag_type': 'dlp', 'tier': 'flag', 'decision': 'confirmed', 'count': 3},
+          ],
+        ),
+      ],
+      child: MaterialApp(
+        theme: buildTheme(SathiColors.light),
+        home: const Shell(location: '/ward/E?tab=money', child: _Gallery()),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUpAll(_loadFonts);
 
   testWidgets('shell and every shared component lay out at desktop width', (tester) async {
-    tester.view.physicalSize = const Size(1440, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    SharedPreferences.setMockInitialValues({
-      'session': jsonEncode(const Session(token: 't', name: 'R. Kulkarni', role: 'ward_officer', wardCode: 'E').toJson()),
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          prefsProvider.overrideWithValue(prefs),
-          flagSummaryProvider.overrideWith(
-            (ref, ward) async => [
-              {'flag_type': 'overbilled', 'tier': 'flag', 'decision': 'open', 'count': 11},
-              {'flag_type': 'overbilled', 'tier': 'watch', 'decision': 'open', 'count': 1},
-              {'flag_type': 'dlp', 'tier': 'flag', 'decision': 'confirmed', 'count': 3},
-            ],
-          ),
-        ],
-        child: MaterialApp(
-          theme: buildTheme(SathiColors.light),
-          home: const Shell(location: '/ward/E?tab=money', child: _Gallery()),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await _pumpShell(tester, const Size(1440, 1400));
 
     expect(tester.takeException(), isNull);
     expect(find.text('Ward E overview'), findsOneWidget);
@@ -181,5 +185,25 @@ void main() {
     closeDetail(tester.element(find.byType(_Gallery)));
     await tester.pumpAndSettle();
     expect(find.text('panel body'), findsNothing);
+  });
+
+  testWidgets('phone width: sidebar moves to a drawer, the detail panel covers the page', (tester) async {
+    await _pumpShell(tester, const Size(390, 844));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('New record'), findsNothing); // sidebar is in the closed drawer
+    expect(find.text('Synthetic data'), findsNothing);
+    expect(find.text('Review 12 flags'), findsOneWidget); // page action on its own row
+
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('New record'), findsOneWidget);
+
+    // About opens the detail panel and closes the drawer; the panel takes the page's place.
+    await tester.tap(find.text('About the data').first);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('New record'), findsNothing);
+    expect(find.text('Possible double billing'), findsNothing); // page under the panel is offstage
   });
 }

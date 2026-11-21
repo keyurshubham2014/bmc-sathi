@@ -4,7 +4,8 @@
 /// Layout and chrome
 ///   SetTopBar({title, titleSuffix, crumbs, onBack, onTitleTap, titleTapLabel, action, required child})
 ///   Crumb(label, {onTap})
-///   DetailPanelLayout({required main, panel, onClose})        page + 440 px right panel, no dimming
+///   DetailPanelLayout({required main, panel, onClose})        page + 440 px right panel, no dimming (covers the page on a phone)
+///   isPhone(context)                                          width < 700: phone layout
 ///   DetailPanel({required title, required onClose, required child, eyebrow, eyebrowIcon, eyebrowColor, subtitle, footer, scroll = true})
 ///   showDetail(context, {required title, required child}) / closeDetail(context)   shell-level panel; child must scroll itself (ListView)
 ///   PageBody({required children, gap = 10})                   scrolling column of panels
@@ -361,28 +362,39 @@ class SectionHeader extends StatelessWidget {
   final Widget? trailing;
   final bool large;
   @override
-  Widget build(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(minHeight: 28),
-    child: Row(
-      children: [
-        Flexible(
-          child: Text.rich(
+  Widget build(BuildContext context) {
+    final text = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: title, style: large ? Tok.section : Tok.cardTitle),
+          if (sub != null)
             TextSpan(
-              children: [
-                TextSpan(text: title, style: large ? Tok.section : Tok.cardTitle),
-                if (sub != null)
-                  TextSpan(
-                    text: '    $sub',
-                    style: Tok.body.copyWith(color: Tok.text2),
-                  ),
-              ],
+              text: '    $sub',
+              style: Tok.body.copyWith(color: Tok.text2),
             ),
-          ),
-        ),
-        if (trailing != null) ...[const SizedBox(width: Tok.s3), const Spacer(), trailing!],
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+    // Phone: a wide trailing widget drops under the title instead of squeezing it.
+    if (trailing != null && isPhone(context)) {
+      return Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: Tok.s3,
+        runSpacing: 8,
+        children: [text, trailing!],
+      );
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Row(
+        children: [
+          Flexible(child: text),
+          if (trailing != null) ...[const SizedBox(width: Tok.s3), const Spacer(), trailing!],
+        ],
+      ),
+    );
+  }
 }
 
 /// White section panel: radius 16, 1 px line, faint shadow.
@@ -580,7 +592,23 @@ class StatRow extends StatelessWidget {
   final List<Widget> children;
   final List<int>? flex;
   @override
-  Widget build(BuildContext context) => IntrinsicHeight(
+  Widget build(BuildContext context) {
+    // Phone: two stats per row, or the figures break mid-number.
+    if (isPhone(context) && children.length > 2) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i += 2) ...[
+            if (i > 0) const SizedBox(height: 16),
+            StatRow(
+              flex: flex?.sublist(i, math.min(i + 2, children.length)),
+              children: children.sublist(i, math.min(i + 2, children.length)),
+            ),
+          ],
+        ],
+      );
+    }
+    return IntrinsicHeight(
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -600,6 +628,7 @@ class StatRow extends StatelessWidget {
       ],
     ),
   );
+  }
 }
 
 /// Compact stat: 34 px grey icon tile, label, 16 px figure with a sub-line beside it.
@@ -722,9 +751,14 @@ class AppButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[Icon(icon, size: 14, color: fg), const SizedBox(width: 7)],
-              Text(
-                label,
-                style: Tok.body.copyWith(color: fg, fontWeight: kind == BtnKind.primary ? FontWeight.w600 : FontWeight.w500),
+              // Flexible: in a narrow column (phone) the label ellipsizes instead of overflowing.
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Tok.body.copyWith(color: fg, fontWeight: kind == BtnKind.primary ? FontWeight.w600 : FontWeight.w500),
+                ),
               ),
               if (trailingIcon != null) ...[
                 const SizedBox(width: 6),
@@ -1146,7 +1180,8 @@ class BudgetBar extends ConsumerWidget {
               ),
             );
           }
-          final tealW = math.max(0.0, c.maxWidth * split - 1.5);
+          // Capped so teal + the 3 px gap fit when spend is barely over budget (e.g. 101%).
+          final tealW = math.max(0.0, math.min(c.maxWidth - 3, c.maxWidth * split - 1.5));
           return Row(
             children: [
               Container(
@@ -1226,24 +1261,31 @@ class BudgetBar extends ConsumerWidget {
         SizedBox(
           height: 16,
           child: LayoutBuilder(
-            builder: (_, c) {
+            builder: (context, c) {
               final x = c.maxWidth * split;
               final mid = over ? t('budget.atBudget') : t('budget.pctSpent', {'pct': pct});
+              final overText = t('budget.pctSpent', {'pct': pct});
+              final overStyle = s.merge(small).copyWith(color: Tok.red, fontWeight: FontWeight.w500);
+              // Slightly over budget (narrow red part): keep the budget label clear of the "spent" label.
+              final overW = over
+                  ? (TextPainter(
+                      text: TextSpan(text: overText, style: overStyle),
+                      textDirection: TextDirection.ltr,
+                      textScaler: MediaQuery.textScalerOf(context),
+                    )..layout()).width
+                  : 0.0;
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Positioned(left: 0, child: Text(fmt.rupees(0), style: s.merge(small))),
                   Positioned(
-                    right: math.max(0, c.maxWidth - x) + 4,
+                    right: math.max(math.max(0, c.maxWidth - x) + 4, over ? overW + 10 : 0),
                     child: Text(mid, style: s.merge(small)),
                   ),
                   if (over)
                     Positioned(
                       right: 0,
-                      child: Text(
-                        t('budget.pctSpent', {'pct': pct}),
-                        style: s.merge(small).copyWith(color: Tok.red, fontWeight: FontWeight.w500),
-                      ),
+                      child: Text(overText, style: overStyle),
                     )
                   else if (split < 0.85)
                     Positioned(right: 0, child: Text(t('budget.atBudget'), style: s.merge(small))),
@@ -1652,8 +1694,51 @@ class TrailStepper extends StatelessWidget {
     return n == TrailNode.missing ? DashedBorder(color: const Color(0xFF8B9198), width: 1.5, child: c) : c;
   }
 
+  /// Phone: steps run down the page, node and rail on the left.
+  Widget _vertical() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final (i, s) in steps.indexed)
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Column(
+                children: [
+                  node(s.node),
+                  if (i < steps.length - 1)
+                    Expanded(
+                      child: Container(
+                        width: 2,
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        color: s.node == TrailNode.missing || steps[i + 1].node == TrailNode.missing ? Tok.dash : Tok.tealRail,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 4, bottom: i < steps.length - 1 ? 14 : 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Caps('${i + 1} · ${s.label}'),
+                      const SizedBox(height: 3),
+                      Text(s.title, style: Tok.emph.copyWith(fontWeight: FontWeight.w600, height: 19 / 14)),
+                      if (s.sub != null) ...[const SizedBox(height: 1), Text(s.sub!, style: Tok.sub.copyWith(fontSize: 12.5))],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => isPhone(context) ? _vertical() : Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       for (final (i, s) in steps.indexed)
@@ -1851,7 +1936,8 @@ class BudgetLine extends StatelessWidget {
     container: true,
     label: [title, ?sub].join('. '),
     child: SizedBox(
-      height: 66,
+      // Phone: the pill reaches the left edge, so the above/below labels get their own bands.
+      height: isPhone(context) ? 104 : 66,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1956,8 +2042,57 @@ class WorksTable extends StatelessWidget {
     return c.width != null ? SizedBox(width: c.width, child: w) : Expanded(flex: c.flex, child: w);
   }
 
+  /// Phone: one card per row. First cell is the heading, labelled cells become "LABEL  value" lines,
+  /// unlabelled cells (links, chevrons) go last.
+  Widget _phone() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final (i, r) in rows.indexed)
+        Pressable(
+          onTap: onRowTap == null ? null : () => onRowTap!(i),
+          radius: 10,
+          selected: selected == i,
+          builder: (_, hover) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: selected == i ? Tok.tealTint : (hover ? Tok.inset : null),
+              border: const Border(bottom: BorderSide(color: Tok.lineSoft)),
+            ),
+            child: DefaultTextStyle.merge(
+              style: Tok.body,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DefaultTextStyle.merge(style: const TextStyle(fontWeight: FontWeight.w600), child: r[0]),
+                  for (final (j, c) in columns.indexed.skip(1))
+                    if (c.label.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 120, child: Caps(c.label)),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: c.numeric ? DefaultTextStyle.merge(style: const TextStyle(fontWeight: FontWeight.w600), child: r[j]) : r[j],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  for (final (j, c) in columns.indexed.skip(1))
+                    if (c.label.isEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: r[j]),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => isPhone(context) ? _phone() : Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -2143,7 +2278,10 @@ class LoadingSkeleton extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [block(120, 12), block(76, 12)]),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [Flexible(child: block(120, 12)), const SizedBox(width: 8), Flexible(child: block(76, 12))],
+            ),
             const SizedBox(height: 12),
             Align(alignment: Alignment.centerLeft, child: block(104, 24)),
             const SizedBox(height: 12),
@@ -2360,6 +2498,17 @@ class DetailPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(stringsProvider);
+    final footerInBody = footer != null && scroll && isPhone(context);
+    final foot = footer == null
+        ? null
+        : Container(
+            padding: footerInBody ? const EdgeInsets.only(top: 16) : const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            margin: footerInBody ? const EdgeInsets.only(top: 18) : null,
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Tok.line)),
+            ),
+            child: footer,
+          );
     return Container(
       decoration: BoxDecoration(
         color: Tok.panel,
@@ -2411,23 +2560,26 @@ class DetailPanel extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: scroll ? SingleChildScrollView(padding: const EdgeInsets.fromLTRB(18, 14, 18, 18), child: child) : child,
+            child: !scroll
+                ? child
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                    // Phone: the footer scrolls with the body; pinned, it would fill half the screen.
+                    child: footerInBody ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [child, foot!]) : child,
+                  ),
           ),
-          if (footer != null)
-            Container(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Tok.line)),
-              ),
-              child: footer,
-            ),
+          if (footer != null && !footerInBody) foot!,
         ],
       ),
     );
   }
 }
 
+/// Phone layout below this width: drawer instead of sidebar, detail panel covers the page.
+bool isPhone(BuildContext context) => MediaQuery.sizeOf(context).width < 700;
+
 /// Page with an optional 440 px right [panel] (usually a [DetailPanel]); the page narrows, nothing dims.
+/// On a phone the panel covers the page instead; the page stays alive underneath.
 /// Escape calls [onClose].
 class DetailPanelLayout extends StatelessWidget {
   const DetailPanelLayout({super.key, required this.main, this.panel, this.onClose});
@@ -2436,13 +2588,15 @@ class DetailPanelLayout extends StatelessWidget {
   final VoidCallback? onClose;
   @override
   Widget build(BuildContext context) {
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: main),
-        if (panel != null) ...[const SizedBox(width: Tok.gapPanels), SizedBox(width: Tok.detailW, child: panel)],
-      ],
-    );
+    final row = isPhone(context)
+        ? IndexedStack(sizing: StackFit.expand, index: panel == null ? 0 : 1, children: [main, panel ?? const SizedBox.shrink()])
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: main),
+              if (panel != null) ...[const SizedBox(width: Tok.gapPanels), SizedBox(width: Tok.detailW, child: panel)],
+            ],
+          );
     if (panel == null || onClose == null) return row;
     return CallbackShortcuts(bindings: {const SingleActivator(LogicalKeyboardKey.escape): onClose!}, child: row);
   }

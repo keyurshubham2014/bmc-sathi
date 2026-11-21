@@ -30,6 +30,8 @@ class _IntakeState extends ConsumerState<IntakeScreen> {
   Widget build(BuildContext context) {
     final t = ref.watch(stringsProvider);
     final ward = ref.watch(sessionProvider)?.wardCode ?? 'E';
+    final phone = isPhone(context);
+    final scope = Pill(t('intake.scope'), tone: Tone.info, icon: Icons.lock_outline);
     return SetTopBar(
       title: t('intake.title'),
       titleSuffix: t('ward.label', {'code': ward}),
@@ -52,10 +54,11 @@ class _IntakeState extends ConsumerState<IntakeScreen> {
                       value: _tab,
                       onChanged: (v) => setState(() => _tab = v),
                     ),
+                    // Phone: the scope pill goes under the tabs.
+                    if (phone) ...[const SizedBox(height: 10), scope],
                   ]),
                 ),
-                const SizedBox(width: 16),
-                Pill(t('intake.scope'), tone: Tone.info, icon: Icons.lock_outline),
+                if (!phone) ...[const SizedBox(width: 16), scope],
               ]),
             ]),
           ),
@@ -172,9 +175,15 @@ mixin _Submit<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             AppButton.primary(t('intake.submit'), icon: Ico.check, onPressed: busy || !ready ? null : onSave),
           const SizedBox(width: 8),
           AppButton.quiet(t('intake.clear'), trailingIcon: null, onPressed: busy ? null : onClear),
-          const Spacer(),
+          const SizedBox(width: 8),
           if (savedId != null)
-            Text(t('intake.savedBy', {'id': savedId, 'name': ref.watch(sessionProvider)?.name ?? ''}), style: Tok.sub),
+            Expanded(
+              child: Text(
+                t('intake.savedBy', {'id': savedId, 'name': ref.watch(sessionProvider)?.name ?? ''}),
+                textAlign: TextAlign.end,
+                style: Tok.sub,
+              ),
+            ),
         ]),
         if (error != null)
           Padding(
@@ -193,17 +202,24 @@ mixin _Submit<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 }
 
-/// Form panel on the left (3), result column on the right (2).
-Widget _split(Widget form, List<Widget> side) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Expanded(flex: 3, child: form),
-      const SizedBox(width: Tok.gapPanels),
-      Expanded(
-        flex: 2,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          for (final (i, w) in side.indexed) ...[if (i > 0) const SizedBox(height: Tok.gapPanels), w],
-        ]),
-      ),
-    ]);
+/// Form panel on the left (3), result column on the right (2); on a phone the result column follows the form.
+Widget _split(Widget form, List<Widget> side) => Builder(
+      builder: (context) => isPhone(context)
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              form,
+              for (final w in side) ...[const SizedBox(height: Tok.gapPanels), w],
+            ])
+          : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 3, child: form),
+              const SizedBox(width: Tok.gapPanels),
+              Expanded(
+                flex: 2,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  for (final (i, w) in side.indexed) ...[if (i > 0) const SizedBox(height: Tok.gapPanels), w],
+                ]),
+              ),
+            ]),
+    );
 
 // ---------------------------------------------------------------------------------------------------
 // Result pieces
