@@ -190,8 +190,8 @@ describe("next-rupee plan", () => {
     const [flag] = await db.$queryRaw<any[]>`
       SELECT work_order_id FROM v_flag f WHERE ward_code = 'E' AND flag_type = 'overbilled' AND tier = 'flag' AND decision = 'open'
         AND NOT EXISTS (SELECT 1 FROM v_flag o WHERE o.work_order_id = f.work_order_id AND o.flag_type <> 'overbilled') LIMIT 1`;
-    await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("auditor")).send({ decision });
     try {
+      await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("auditor")).send({ decision });
       check(before, await planE());
     } finally {
       await db.flag_decision.deleteMany({ where: { flag_type: "overbilled", work_order_id: flag.work_order_id } });
@@ -219,6 +219,15 @@ describe("next-rupee plan", () => {
     const agg = await db.work_order.aggregate({ where: { road_id: item.road_id }, _count: true, _sum: { cost_inr: true } });
     expect(item.road_jobs).toBe(agg._count);
     expect(Number(item.road_spend)).toBe(agg._sum.cost_inr ?? 0);
+  });
+  it("puts a job flagged equally for billing and DLP under DLP, every time", async () => {
+    const [want] = await db.$queryRaw<any[]>`
+      SELECT COALESCE(SUM(top), 0)::float8 AS dlp FROM (
+        SELECT MAX(amount_at_stake) AS top, MAX(amount_at_stake) FILTER (WHERE flag_type = 'dlp') AS dlp_top
+        FROM v_flag WHERE tier = 'flag' AND decision <> 'not_an_issue' GROUP BY work_order_id) t
+      WHERE dlp_top = top`;
+    const [got] = await db.$queryRaw<any[]>`SELECT SUM(confirmed_dlp + possible_dlp)::float8 AS dlp FROM v_ward_recoverable`;
+    expect(got.dlp).toBe(want.dlp);
   });
   it("gives a citizen the recoverable totals and what they would fund", async () => {
     const r = await planE("citizen");

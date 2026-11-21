@@ -163,6 +163,7 @@ LEFT JOIN (
 -- Flagged money per ward: confirmed by a decision, or still possible (open or awaiting an explanation).
 -- A work order never counts for more than its largest flag that has not been dismissed. Its confirmed part
 -- is its largest confirmed flag; whatever is left of the largest amount stays possible.
+-- When a billing flag and a DLP flag tie for largest, the amount goes under DLP.
 CREATE VIEW v_ward_recoverable AS
 WITH f AS (
   SELECT ward_code, work_order_id, amount_at_stake AS amt, (flag_type = 'dlp') AS is_dlp, (decision = 'confirmed') AS is_confirmed
@@ -171,9 +172,9 @@ WITH f AS (
 w AS (
   SELECT ward_code, work_order_id,
          COALESCE(MAX(amt) FILTER (WHERE is_confirmed), 0)                                    AS c_amt,
-         COALESCE((array_agg(is_dlp ORDER BY amt DESC) FILTER (WHERE is_confirmed))[1], false) AS c_dlp,
+         COALESCE((array_agg(is_dlp ORDER BY amt DESC, is_dlp DESC) FILTER (WHERE is_confirmed))[1], false) AS c_dlp,
          MAX(amt)                                                                             AS t_amt,
-         (array_agg(is_dlp ORDER BY amt DESC))[1]                                             AS t_dlp
+         (array_agg(is_dlp ORDER BY amt DESC, is_dlp DESC))[1]                                             AS t_dlp
   FROM f GROUP BY 1, 2
 )
 SELECT wd.ward_code,
@@ -463,7 +464,7 @@ SELECT o.*, wm.remaining AS ward_remaining,
        (wm.remaining + rv.confirmed_total > 0 AND o.cumulative_cost <= wm.remaining + rv.confirmed_total) AS within_recovered,
        (wm.remaining + rv.confirmed_total + rv.possible_total > 0
         AND o.cumulative_cost <= wm.remaining + rv.confirmed_total + rv.possible_total)                    AS within_possible,
-       -- Every job on this road this season, whatever the work type.
+       -- Every loaded job on this road, whatever the work type. The data holds one season, like every other total here.
        COALESCE(rj.road_jobs, 0) AS road_jobs, COALESCE(rj.road_spend, 0)::bigint AS road_spend
 FROM o JOIN v_ward_money wm USING (ward_code) JOIN v_ward_recoverable rv USING (ward_code)
 LEFT JOIN (SELECT road_id, COUNT(*)::int AS road_jobs, SUM(cost_inr)::bigint AS road_spend FROM work_order GROUP BY road_id) rj
