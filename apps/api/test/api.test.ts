@@ -169,7 +169,10 @@ describe("next-rupee plan", () => {
   const planE = async (who = "auditor") => (await api().get("/api/v1/wards/E/plan").set(as(who))).body;
   const decideOne = async (decision: string, check: (before: any, after: any) => void) => {
     const before = await planE();
-    const flag = (await api().get("/api/v1/flags?type=overbilled&ward_code=E&decision=open&limit=1").set(as("auditor"))).body.items[0];
+    // A job whose only flag is over-billing, so the whole amount moves with the decision.
+    const [flag] = await db.$queryRaw<any[]>`
+      SELECT work_order_id FROM v_flag f WHERE ward_code = 'E' AND flag_type = 'overbilled' AND tier = 'flag' AND decision = 'open'
+        AND NOT EXISTS (SELECT 1 FROM v_flag o WHERE o.work_order_id = f.work_order_id AND o.flag_type <> 'overbilled') LIMIT 1`;
     await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("auditor")).send({ decision });
     try {
       check(before, await planE());
