@@ -1,0 +1,15 @@
+# Local Postgres for BMC Sathi. Host port 5440 because 5432-5439 are in use on this laptop.
+services:
+  db:
+    image: postgres:17
+    container_name: bmc-sathi-db
+    environment:
+      POSTGRES_USER: sathi
+      POSTGRES_PASSWORD: sathi
+      POSTGRES_DB: sathi
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      - sathi-db:/var/lib/postgresql/data
+volumes:
+  sathi-db:

@@ -1,0 +1,327 @@
+// Tables only. Views live in prisma/views.sql (Prisma does not manage views).
+// Column names match DATA_DICTIONARY.md so real exports map straight in.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- raw tables (one per supplied file) ----------
+
+model ward {
+  ward_code                      String @id
+  ward_name                      String
+  zone                           String
+  assistant_commissioner_office  String
+  centroid_lat                   Float
+  centroid_lon                   Float
+  approx_area_km2                Float
+  population_est                 Int
+  low_lying_index                Float
+  engineering_crews              Int
+  localities                     String
+  monsoon_repair_budget_inr_2025 Int
+  roads                          road[]
+  work_orders                    work_order[]
+}
+
+model locality {
+  locality  String
+  ward_code String
+  lat       Float
+  lon       Float
+  aliases   String?
+
+  @@id([locality, ward_code])
+}
+
+model road {
+  road_id         String       @id
+  road_name       String
+  segment_no      Int
+  ward_code       String
+  road_type       String
+  surface         String
+  lanes           Int
+  length_m        Float
+  start_lat       Float
+  start_lon       Float
+  end_lat         Float
+  end_lon         Float
+  last_resurfaced DateTime     @db.Date
+  under_dlp       Boolean
+  bus_route       Boolean
+  ward            ward         @relation(fields: [ward_code], references: [ward_code])
+  work_orders     work_order[]
+
+  @@index([ward_code])
+}
+
+model traffic {
+  road_id               String @id
+  peak_hour_vehicles    Int
+  avg_peak_speed_kmph   Float
+  congestion_index_0_10 Float
+  bus_routes_count      Int
+  two_wheeler_share_pct Float
+}
+
+model flood_hotspot {
+  hotspot_id                 String  @id
+  name                       String
+  ward_code                  String
+  lat                        Float
+  lon                        Float
+  flood_threshold_mm_per_day Float
+  tide_sensitive             Boolean
+  avg_water_depth_cm         Float
+  avg_recession_hours        Float
+  pumping_station_nearby     Boolean
+  years_flagged_last_5       Int
+
+  @@index([ward_code])
+}
+
+model facility {
+  facility_id          String  @id
+  type                 String
+  name                 String
+  ward_code            String
+  lat                  Float
+  lon                  Float
+  beds_or_students     Int?
+  emergency_services   Boolean
+  ambulance_entry_road String?
+
+  @@index([ambulance_entry_road])
+}
+
+model accident {
+  accident_id    String   @id
+  occurred_at    DateTime @db.Timestamp(0)
+  ward_code      String
+  road_id        String?
+  lat            Float
+  lon            Float
+  vehicle_type   String
+  severity       String
+  probable_cause String
+
+  @@index([road_id])
+}
+
+model rainfall_daily {
+  date         DateTime @db.Date
+  station      String
+  rainfall_mm  Float
+  imd_category String
+  imd_alert    String
+
+  @@id([date, station])
+}
+
+model tide {
+  date           DateTime @db.Date
+  high_tide_time String
+  height_m       Float
+  big_tide_flag  Boolean
+
+  @@id([date, high_tide_time])
+}
+
+model rate_card {
+  repair_method     String       @id
+  unit              String
+  standard_rate_inr Int
+  work_orders       work_order[]
+}
+
+model contractor {
+  contractor_id    String       @id
+  contractor_name  String
+  empanelled_since Int
+  active_wards     String
+  work_orders      work_order[]
+}
+
+model complaint {
+  complaint_id      String                 @id
+  received_at       DateTime               @db.Timestamp(0)
+  channel           String
+  category_reported String
+  description       String
+  language          String?
+  locality_text     String?
+  ward_code         String?
+  lat               Float?
+  lon               Float?
+  gps_accuracy_m    Float?
+  photo_url         String?
+  photo_description String?
+  complainant_id    String?
+  upvotes           Int                    @default(0)
+  status            String
+  resolved_at       DateTime?              @db.Timestamp(0)
+  source            String                 @default("import")
+  links             work_order_complaint[]
+  enriched          complaint_enriched?
+
+  @@index([ward_code])
+  @@index([status])
+  @@index([received_at])
+}
+
+model social_post {
+  post_id           String   @id
+  posted_at         DateTime @db.Timestamp(0)
+  source            String
+  author_handle     String
+  text              String
+  has_media         Boolean
+  likes_or_forwards Int
+}
+
+model work_order {
+  work_order_id        String                 @id
+  linked_complaint_ids String?
+  ward_code            String
+  road_id              String
+  work_type            String
+  repair_method        String
+  contractor_id        String
+  assigned_at          DateTime               @db.Timestamp(0)
+  work_started_at      DateTime?              @db.Timestamp(0)
+  completed_at         DateTime?              @db.Timestamp(0)
+  area_sqm             Float
+  cost_inr             Int
+  sla_hours            Int?
+  sla_met              Boolean?
+  reopened_within_30d  Boolean?
+  engineer_remark      String?
+  source               String                 @default("import")
+  ward                 ward                   @relation(fields: [ward_code], references: [ward_code])
+  road                 road                   @relation(fields: [road_id], references: [road_id])
+  contractor           contractor             @relation(fields: [contractor_id], references: [contractor_id])
+  rate                 rate_card              @relation(fields: [repair_method], references: [repair_method])
+  links                work_order_complaint[]
+  decisions            flag_decision[]
+  issue                issue?
+
+  @@index([ward_code])
+  @@index([road_id])
+  @@index([contractor_id])
+  @@index([road_id, work_type, assigned_at])
+}
+
+model work_order_complaint {
+  work_order_id String
+  complaint_id  String
+  work_order    work_order @relation(fields: [work_order_id], references: [work_order_id], onDelete: Cascade)
+  complaint     complaint  @relation(fields: [complaint_id], references: [complaint_id], onDelete: Cascade)
+
+  @@id([work_order_id, complaint_id])
+  @@index([complaint_id])
+}
+
+// ---------- derived and application tables ----------
+
+model road_proximity {
+  road_id                String  @id
+  near_hotspot_id        String?
+  hotspot_tide_sensitive Boolean @default(false)
+  hospital_entry_count   Int     @default(0)
+  school_count           Int     @default(0)
+}
+
+model complaint_enriched {
+  complaint_id        String    @id
+  category_clean      String
+  severity            Int?      @db.SmallInt
+  text_en             String?
+  road_name_mentioned String?
+  ward_code_resolved  String?
+  lat_resolved        Float?
+  lon_resolved        Float?
+  location_source     String    @default("none")
+  road_id_resolved    String?
+  issue_id            Int?
+  model               String?
+  enriched_at         DateTime  @default(now()) @db.Timestamp(0)
+  complaint           complaint @relation(fields: [complaint_id], references: [complaint_id], onDelete: Cascade)
+  issue               issue?    @relation(fields: [issue_id], references: [issue_id], onDelete: SetNull)
+
+  @@index([issue_id])
+  @@index([road_id_resolved])
+}
+
+model issue {
+  issue_id          Int                  @id @default(autoincrement())
+  ward_code         String
+  road_id           String?
+  category          String
+  severity          Int                  @db.SmallInt
+  first_reported_at DateTime             @db.Timestamp(0)
+  last_reported_at  DateTime             @db.Timestamp(0)
+  complaint_count   Int
+  upvotes_total     Int                  @default(0)
+  work_order_id     String?              @unique
+  state             String
+  work_order        work_order?          @relation(fields: [work_order_id], references: [work_order_id], onDelete: SetNull)
+  complaints        complaint_enriched[]
+
+  @@index([ward_code])
+  @@index([state])
+  @@index([road_id, category])
+}
+
+model social_post_label {
+  post_id  String  @id
+  label    String
+  issue_id Int?
+  text_en  String?
+}
+
+model summary {
+  subject_type String
+  subject_id   String
+  lang         String
+  body         String
+  facts_hash   String
+  generated_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@id([subject_type, subject_id, lang])
+}
+
+model flag_decision {
+  flag_type     String
+  work_order_id String
+  decision      String
+  note          String?
+  decided_by    Int
+  decided_at    DateTime   @default(now()) @db.Timestamp(0)
+  work_order    work_order @relation(fields: [work_order_id], references: [work_order_id], onDelete: Cascade)
+  user          app_user   @relation(fields: [decided_by], references: [user_id])
+
+  @@id([flag_type, work_order_id])
+}
+
+model setting {
+  key         String @id
+  value       Float
+  description String
+}
+
+model app_user {
+  user_id       Int             @id @default(autoincrement())
+  username      String          @unique
+  password_hash String
+  role          String
+  ward_code     String?
+  display_name  String
+  decisions     flag_decision[]
+}

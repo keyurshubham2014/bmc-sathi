@@ -1,0 +1,257 @@
+// Proves the role rules and the flag workflow against the loaded database.
+import request from "supertest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { app } from "../src/app";
+import { db } from "../src/lib/db";
+
+const api = () => request(app);
+const tokens: Record<string, string> = {};
+const as = (who: string) => ({ Authorization: `Bearer ${tokens[who]}` });
+let touched: { flag_type: string; work_order_id: string } | null = null;
+
+beforeAll(async () => {
+  for (const u of ["auditor", "officer.e", "citizen"]) {
+    const r = await api().post("/api/v1/auth/login").send({ username: u, password: process.env.DEMO_PASSWORD });
+    expect(r.status).toBe(200);
+    tokens[u] = r.body.token;
+  }
+});
+afterAll(async () => {
+  if (touched) await db.flag_decision.deleteMany({ where: touched });
+  await db.$disconnect();
+});
+
+describe("auth", () => {
+  it("rejects a wrong password", async () => {
+    const r = await api().post("/api/v1/auth/login").send({ username: "auditor", password: "nope" });
+    expect(r.status).toBe(401);
+    expect(r.body.code).toBe("not_signed_in");
+  });
+  it("rejects a missing token", async () => {
+    expect((await api().get("/api/v1/wards")).status).toBe(401);
+  });
+  it("lets every role read wards, highest spend share first", async () => {
+    const r = await api().get("/api/v1/wards").set(as("citizen"));
+    expect(r.body.items).toHaveLength(24);
+    expect(r.body.items[0].ward_code).toBe("E");
+    expect(r.body.items.filter((w: any) => w.spend_share > 1)).toHaveLength(6);
+  });
+});
+
+describe("flags", () => {
+  it("refuses the queue to citizens", async () => {
+    const r = await api().get("/api/v1/flags").set(as("citizen"));
+    expect(r.status).toBe(403);
+    expect(r.body.code).toBe("not_allowed");
+  });
+  it("shows the reference counts to the auditor", async () => {
+    const count = async (q: string) => (await api().get(`/api/v1/flags?limit=1&${q}`).set(as("auditor"))).body.total;
+    expect(await count("type=overbilled")).toBe(109);
+    expect(await count("type=duplicate")).toBe(45);
+    expect(await count("type=dlp")).toBe(493);
+    expect(await count("tier=watch")).toBe(5);
+  });
+  it("limits a ward officer to their ward", async () => {
+    const own = await api().get("/api/v1/flags?limit=200").set(as("officer.e"));
+    expect(own.body.items.length).toBeGreaterThan(0);
+    expect(own.body.items.every((f: any) => f.ward_code === "E")).toBe(true);
+    expect((await api().get("/api/v1/flags?ward_code=L").set(as("officer.e"))).status).toBe(403);
+  });
+  it("shows both work orders for a double-billing flag", async () => {
+    const list = await api().get("/api/v1/flags?type=duplicate&limit=1").set(as("auditor"));
+    const f = list.body.items[0];
+    const r = await api().get(`/api/v1/flags/duplicate/${f.work_order_id}`).set(as("auditor"));
+    expect(r.body.work_order.has_complaint).toBe(false);
+    expect(r.body.earlier_work_order.road_id).toBe(r.body.work_order.road_id);
+    expect(r.body.earlier_work_order.contractor_id).toBe(r.body.work_order.contractor_id);
+  });
+  it("records a decision that persists", async () => {
+    const f = (await api().get("/api/v1/flags?type=duplicate&decision=open&limit=1").set(as("auditor"))).body.items[0];
+    touched = { flag_type: "duplicate", work_order_id: f.work_order_id };
+    const put = await api().put(`/api/v1/flags/duplicate/${f.work_order_id}/decision`).set(as("auditor"))
+      .send({ decision: "needs_explanation", note: "Please share site photos." });
+    expect(put.status).toBe(200);
+    const again = await api().get(`/api/v1/flags/duplicate/${f.work_order_id}`).set(as("auditor"));
+    expect(again.body.flag.decision).toBe("needs_explanation");
+    expect(again.body.flag.decided_by_name).toBe("City Auditor");
+  });
+  it("refuses a decision on a watch item and an invalid decision", async () => {
+    const w = (await api().get("/api/v1/flags?tier=watch&limit=1").set(as("auditor"))).body.items[0];
+    const r = await api().put(`/api/v1/flags/overbilled/${w.work_order_id}/decision`).set(as("auditor")).send({ decision: "confirmed" });
+    expect(r.status).toBe(409);
+    const bad = await api().put(`/api/v1/flags/overbilled/${w.work_order_id}/decision`).set(as("auditor")).send({ decision: "guilty" });
+    expect(bad.status).toBe(400);
+  });
+});
+
+describe("ward money", () => {
+  it("drill-down totals match the tile", async () => {
+    const ward = (await api().get("/api/v1/wards/E").set(as("auditor"))).body.ward;
+    const list = await api().get("/api/v1/wards/E/work-orders?filter=reopened&limit=1").set(as("auditor"));
+    expect(list.body.total_cost).toBe(ward.reopened_spend);
+    expect(list.body.total).toBe(ward.reopened_jobs);
+  });
+  it("breakdown adds up to ward spend", async () => {
+    const ward = (await api().get("/api/v1/wards/E").set(as("auditor"))).body.ward;
+    for (const d of ["contractor", "method", "week"]) {
+      const b = await api().get(`/api/v1/wards/E/breakdown?dimension=${d}`).set(as("auditor"));
+      expect(b.body.items.reduce((s: number, x: any) => s + x.spend, 0)).toBe(ward.spend);
+    }
+  });
+  it("returns 404 for an unknown ward", async () => {
+    expect((await api().get("/api/v1/wards/ZZ").set(as("auditor"))).status).toBe(404);
+  });
+});
+
+describe("scorecards", () => {
+  it("lists contractors in name order with no score", async () => {
+    const r = await api().get("/api/v1/contractors").set(as("citizen"));
+    const names = r.body.items.map((c: any) => c.contractor_name);
+    expect(names).toHaveLength(8);
+    expect(names).toEqual([...names].sort());
+    expect(Object.keys(r.body.items[0])).not.toContain("band");
+  });
+  it("compares a contractor with similar jobs", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    expect(s.measures.durability.observed).toBeCloseTo(0.376, 2);
+    expect(s.measures.durability.expected).toBeLessThan(s.measures.durability.observed);
+    expect(s.measures.durability.band).toBe("well_below");
+    expect(s.measures.cost.band).toBe("review");
+    const jobs = await api().get("/api/v1/contractors/CT03/work-orders?filter=overbilled&limit=1").set(as("citizen"));
+    expect(jobs.body.total).toBe(s.measures.cost.flagged);
+  });
+  it("gives every ward a scorecard", async () => {
+    const s = (await api().get(`/api/v1/wards/${encodeURIComponent("F/S")}/scorecard`).set(as("citizen"))).body.scorecard;
+    expect(Object.keys(s.measures).sort()).toEqual(["cost", "durability", "speed"]);
+  });
+});
+
+describe("next-rupee plan", () => {
+  it("ranks by risk with parts that add up and a correct budget line", async () => {
+    const r = (await api().get("/api/v1/wards/B/plan").set(as("citizen"))).body;
+    expect(r.items.length).toBeGreaterThan(0);
+    let running = 0, sawOver = false;
+    r.items.forEach((it: any, i: number) => {
+      if (i) expect(it.risk_score).toBeLessThanOrEqual(r.items[i - 1].risk_score);
+      const parts = it.pts_severity + it.pts_access + it.pts_safety + it.pts_traffic + it.pts_flood + it.pts_demand;
+      expect(Math.abs(parts - it.risk_score)).toBeLessThan(0.35);
+      running += it.estimated_cost;
+      expect(it.cumulative_cost).toBe(running);
+      expect(it.within_budget).toBe(running <= r.ward.remaining);
+      if (!it.within_budget) sawOver = true;
+      else expect(sawOver).toBe(false);
+    });
+  });
+  it("marks nothing affordable in an overspent ward", async () => {
+    const r = (await api().get("/api/v1/wards/E/plan").set(as("citizen"))).body;
+    expect(r.ward.remaining).toBeLessThan(0);
+    expect(r.items.some((it: any) => it.within_budget)).toBe(false);
+  });
+  it("recommends the longest-lasting method on high-risk pothole roads", async () => {
+    const all = (await api().get("/api/v1/wards/L/plan").set(as("citizen"))).body.items;
+    const hr = all.filter((it: any) => it.category === "Pothole" && it.high_risk);
+    expect(hr.length).toBeGreaterThan(0);
+    for (const it of hr) expect(it.recommended_method).not.toBe("Cold mix patch");
+  });
+});
+
+describe("settings", () => {
+  it("is for auditors only and keeps the weights at 100", async () => {
+    expect((await api().get("/api/v1/settings").set(as("officer.e"))).status).toBe(403);
+    const bad = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { w_traffic: 40 } });
+    expect(bad.status).toBe(400);
+  });
+  it("re-ranks the plan when weights change", async () => {
+    const order = async () => (await api().get("/api/v1/wards/L/plan").set(as("auditor"))).body.items.slice(0, 15).map((i: any) => i.issue_id).join();
+    const before = await order();
+    const put = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { w_severity: 5, w_traffic: 40 } });
+    expect(put.status).toBe(200);
+    const after = await order();
+    await api().put("/api/v1/settings").set(as("auditor")).send({ values: { w_severity: 30, w_traffic: 15 } });
+    expect(after).not.toBe(before);
+    expect(await order()).toBe(before);
+  });
+});
+
+describe("trail", () => {
+  it("leads from a complaint to its work order", async () => {
+    const r = await api().get("/api/v1/trail/complaint/BMC25-000005").set(as("citizen"));
+    expect(r.status).toBe(200);
+    expect(r.body.highlight).toBe("BMC25-000005");
+    expect(r.body.work_order.work_order_id).toMatch(/^WO25-/);
+    expect(r.body.road.road_id).toBe(r.body.work_order.road_id);
+    expect(JSON.stringify(r.body)).not.toContain("complainant_id");
+  });
+  it("shows an open issue as never fixed, with its plan rank", async () => {
+    const plan = (await api().get("/api/v1/wards/B/plan").set(as("citizen"))).body.items[0];
+    const r = (await api().get(`/api/v1/trail/issue/${plan.issue_id}`).set(as("citizen"))).body;
+    expect(r.work_order).toBeNull();
+    expect(r.plan.rank).toBe(1);
+  });
+  it("shows an unlinked work order with its flag and no complaints", async () => {
+    const f = (await api().get("/api/v1/flags?type=duplicate&limit=1").set(as("auditor"))).body.items[0];
+    const r = (await api().get(`/api/v1/trail/work-order/${f.work_order_id}`).set(as("citizen"))).body;
+    expect(r.complaints).toHaveLength(0);
+    expect(r.flags.some((x: any) => x.flag_type === "duplicate")).toBe(true);
+  });
+  it("searches and handles no match", async () => {
+    const hit = (await api().get("/api/v1/trail/search?q=LBS%20Marg").set(as("citizen"))).body;
+    expect(hit.issues.length).toBeGreaterThan(0);
+    const none = (await api().get("/api/v1/trail/search?q=zzzzqq").set(as("citizen"))).body;
+    expect(none.issues.length + none.complaints.length + none.work_orders.length).toBe(0);
+  });
+});
+
+describe("intake", () => {
+  it("is for ward officers, in their own ward", async () => {
+    expect((await api().get("/api/v1/intake/options").set(as("auditor"))).status).toBe(403);
+    const outside = (await api().get("/api/v1/wards/B/plan").set(as("auditor"))).body.items[0].road_id;
+    const r = await api().post("/api/v1/intake/work-orders").set(as("officer.e")).send({
+      road_id: outside, work_type: "Pothole", repair_method: "Hot mix patch", contractor_id: "CT01", area_sqm: 10, cost_inr: 5000, assigned_at: "2025-10-06" });
+    expect(r.status).toBe(403);
+  });
+  it("flags an over-billed new work order at once, then deletes it", async () => {
+    const o = (await api().get("/api/v1/intake/options").set(as("officer.e"))).body;
+    const m = o.methods.find((x: any) => x.repair_method === "Hot mix patch");
+    const body = { road_id: o.roads[0].road_id, work_type: "Pothole", repair_method: "Hot mix patch", contractor_id: "CT01",
+      area_sqm: 10, cost_inr: m.standard_rate_inr * 10 * 2, assigned_at: "2025-10-06T10:00:00" };
+    const bad = await api().post("/api/v1/intake/work-orders").set(as("officer.e")).send({ ...body, repair_method: "Drain desilting" });
+    expect(bad.status).toBe(400);
+    const r = await api().post("/api/v1/intake/work-orders").set(as("officer.e")).send(body);
+    expect(r.status).toBe(201);
+    expect(r.body.flags.some((f: any) => f.flag_type === "overbilled")).toBe(true);
+    const del = await api().delete(`/api/v1/intake/work-orders/${r.body.work_order.work_order_id}`).set(as("officer.e"));
+    expect(del.status).toBe(204);
+    expect((await api().delete("/api/v1/intake/work-orders/WO25-00001").set(as("officer.e"))).status).toBe(404);
+  });
+  it("puts a new complaint into the plan", async () => {
+    const o = (await api().get("/api/v1/intake/options").set(as("officer.e"))).body;
+    const r = await api().post("/api/v1/intake/complaints").set(as("officer.e")).send({
+      description: `Deep pothole on ${o.roads[0].road_name} near the signal`, category_reported: "Pothole", locality_text: "Byculla" });
+    expect(r.status).toBe(201);
+    expect(r.body.road.road_name).toBe(o.roads[0].road_name);
+    expect(r.body.plan.rank).toBeGreaterThan(0);
+    expect(JSON.stringify(r.body)).not.toContain("complainant_id");
+    // Clean up so reference counts hold.
+    const { db } = await import("../src/lib/db");
+    await db.complaint.delete({ where: { complaint_id: r.body.complaint.complaint_id } });
+    if (r.body.joined_existing) await db.issue.update({ where: { issue_id: r.body.issue.issue_id }, data: { complaint_count: { decrement: 1 } } });
+    else await db.issue.delete({ where: { issue_id: r.body.issue.issue_id } });
+  });
+});
+
+describe("ask", () => {
+  it("keeps a ward officer to their own ward and validates input", async () => {
+    const out = await api().post("/api/v1/ask").set(as("officer.e")).send({ question: "Why is spend high?", scope_type: "ward", scope_id: "B" });
+    expect(out.status).toBe(403);
+    const bad = await api().post("/api/v1/ask").set(as("auditor")).send({ question: "x", scope_type: "ward", scope_id: "E" });
+    expect(bad.status).toBe(400);
+  });
+  it("gathers facts without work-order detail for citizens", async () => {
+    const { factsFor } = await import("../src/modules/ask");
+    const f: any = await factsFor("ward", "E", false);
+    expect(f.ward.ward_code).toBe("E");
+    expect(f.recent_work_orders).toHaveLength(0);
+    expect(f.top_of_plan.length).toBeGreaterThan(0);
+  });
+});
