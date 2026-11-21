@@ -1,6 +1,6 @@
 # New API fields for the screens
 
-Branch `whose-delay`, backend only. Everything here is additive: no existing field changed name, meaning or value. Examples are real responses from the loaded synthetic data. Base path `/api/v1`.
+Branch `whose-delay`. The scorecard, plan and flag detail screens on this branch already use these fields. Everything here is additive: no existing field changed name, meaning or value. Examples are real responses from the loaded synthetic data. Base path `/api/v1`.
 
 Why each figure exists is in `docs/ideas/2026-11-21-sathi-next-features.md`. The rules are in `apps/api/prisma/views.sql`.
 
@@ -46,6 +46,12 @@ Screen rules:
 ```
 
 Suggested line: "13 manhole jobs had a 24-hour target; such work typically takes 82 hours once assigned." The list is wider than manholes and cave-ins: drains at 48 and 72 hours and waterlogging at 24 hours are in it too.
+
+**`scorecard.late`**: the subject's missed jobs by cause, matching the three filters in section 2.
+
+```json
+{ "expired_before_assignment": 101, "too_little_time_left": 69, "had_time": 9 }
+```
 
 **`scorecard.redo`**: what re-opened fixes cost, and what the jobs that followed them cost.
 
@@ -151,7 +157,7 @@ Screen rules:
 - When `source` is `template` and Marathi was asked for, `lang` comes back `en`: say the Marathi version is unavailable just now.
 - When `left_out` is above 0, the body already says how many smaller jobs are not listed.
 - Calls can take up to 20 seconds before the template is returned; show progress.
-- The Claude path has not been tried live yet. Use `plain: true` until it has.
+- The Claude path was tried once in the running app (a DLP draft for RD0220, 21 Nov 2026) and returned a draft that passed the check.
 
 ## 5. Settings: `GET` and `PUT /settings`
 
