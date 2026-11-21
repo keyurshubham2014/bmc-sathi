@@ -448,5 +448,9 @@ SELECT o.*, wm.remaining AS ward_remaining,
        -- Recovered money pays off any overspend first. It never changes within_budget.
        (wm.remaining + rv.confirmed_total > 0 AND o.cumulative_cost <= wm.remaining + rv.confirmed_total) AS within_recovered,
        (wm.remaining + rv.confirmed_total + rv.possible_total > 0
-        AND o.cumulative_cost <= wm.remaining + rv.confirmed_total + rv.possible_total)                    AS within_possible
-FROM o JOIN v_ward_money wm USING (ward_code) JOIN v_ward_recoverable rv USING (ward_code);
+        AND o.cumulative_cost <= wm.remaining + rv.confirmed_total + rv.possible_total)                    AS within_possible,
+       -- Every job on this road this season, whatever the work type.
+       COALESCE(rj.road_jobs, 0) AS road_jobs, COALESCE(rj.road_spend, 0)::bigint AS road_spend
+FROM o JOIN v_ward_money wm USING (ward_code) JOIN v_ward_recoverable rv USING (ward_code)
+LEFT JOIN (SELECT road_id, COUNT(*)::int AS road_jobs, SUM(cost_inr)::bigint AS road_spend FROM work_order GROUP BY road_id) rj
+       ON rj.road_id = o.road_id;

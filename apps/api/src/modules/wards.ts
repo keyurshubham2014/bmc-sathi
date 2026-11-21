@@ -88,7 +88,7 @@ wards.get("/:code/plan", async (req, res) => {
            days_open, accidents, hospital_entry_count, school_count, bus_route, near_hotspot_id, high_risk, risk_score,
            pts_severity, pts_access, pts_safety, pts_traffic, pts_flood, pts_demand, recommended_method,
            recommended_reopen_rate, estimated_cost, alt_method, alt_cost, alt_reopen_rate, cumulative_cost, within_budget,
-           within_recovered, within_possible
+           within_recovered, within_possible, road_jobs, road_spend
     FROM v_plan WHERE ward_code = ${req.params.code} ORDER BY rank`;
   const weights = await db.setting.findMany({ where: { key: { startsWith: "w_" } } });
   // Totals only: what flagged money would fund. The flag rows themselves stay behind the flags routes.
