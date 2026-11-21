@@ -7,7 +7,6 @@ Follow each rupee of Mumbai's monsoon road spend, from complaint to repair to ou
 > **Note:** Independent prototype, not an official BMC product. All data in this repository is synthetic.
 
 **Live demo: [bmc-sathi.onrender.com](https://bmc-sathi.onrender.com)**. Tap a demo account on the sign-in page; no password needed.
-It runs on Render's free plan, so the first visit after a quiet spell takes 30 to 50 seconds to wake up.
 
 ![City overview: budget, spend, open flags and wards over budget](docs/screenshots/overview.jpg)
 
@@ -186,7 +185,7 @@ flutter run -d web-server --web-port 5173 --web-hostname localhost \
 
 7. **New record** (ward officer): enter a work order billed well above the rate card; it is flagged on save.
 
-   ![New record form for a ward officer](docs/screenshots/intake.jpg)
+   ![New record: a pothole patch billed at 4.81x the rate card, flagged as over-billed on save](docs/screenshots/intake.jpg)
 
 8. **Trail**: search a complaint id, work order id, road or locality.
 
@@ -432,6 +431,7 @@ flowchart LR
 | Root directory | `apps/api` |
 | Build command | `npm ci && npx prisma generate` |
 | Start command | `npx tsx src/server.ts` |
+| Instance type | Starter, always on |
 | Branch | `main`, auto-deploy on every push |
 | Environment | `DATABASE_URL` (Neon pooled), `DIRECT_URL` (Neon direct), `JWT_SECRET`, `ANTHROPIC_API_KEY`, `NODE_VERSION=22` |
 
@@ -459,7 +459,7 @@ rm -rf ../api/public && cp -R build/web ../api/public
 - Claude's reading of complaints (translation, category, severity) and its matching of social posts were spot-checked, not measured against a labelled set.
 - `npm run db:summarise` is not part of `db:setup`. Summaries are not rewritten automatically when figures change; the page marks them as written before recent changes until it is run again.
 - The Ask rate limit (10 questions a minute per user) is kept in the API's memory, so it resets on restart and is not shared between instances.
-- The live demo is on Render's free plan: it sleeps when idle, and all visitors share one database, so decisions and settings changed there stay changed.
+- All visitors to the live demo share one database, so decisions and settings changed there stay changed.
 - The web build in `apps/api/public` is updated by hand (see [Deployment](#deployment)); a push that changes only `apps/web` does not change the live site.
 - The API has no linter configured, and no CI runs the tests.
 - The overview map uses real BMC ward boundaries (`apps/web/assets/geo/wards.geojson`) over OpenStreetMap's public tile server, so it needs a network connection, and that server is not meant for heavy use. Everything plotted on it (spend, flags) is synthetic. `data/wards.geojson` is the challenge's simplified file and is no longer drawn.
