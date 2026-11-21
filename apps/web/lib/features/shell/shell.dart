@@ -737,7 +737,24 @@ class _TopBar extends ConsumerWidget {
         child: Row(
           children: [
             if (spec?.onBack != null) ...[
-              AppIconButton(Ico.chevronLeft, tooltip: t('action.back'), onPressed: spec!.onBack),
+              // v2: 26 px back button, radius 8, grey 14 px chevron.
+              Pressable(
+                onTap: spec!.onBack,
+                radius: 8,
+                tooltip: t('action.back'),
+                semanticLabel: t('action.back'),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Tok.panel,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Tok.line),
+                    boxShadow: Tok.shadowControl,
+                  ),
+                  child: const Icon(Ico.chevronLeft, size: 14, color: Tok.text2),
+                ),
+              ),
               const SizedBox(width: 10),
             ],
             Expanded(

@@ -195,19 +195,23 @@ class _AskState extends ConsumerState<_AskPanel> {
           Expanded(child: Text(t('ask.p.note'), style: Tok.sub.copyWith(fontSize: 12.5, height: 18 / 12.5))),
         ]),
       ],
-      Padding(
-        padding: const EdgeInsets.fromLTRB(22, 32, 22, 0),
-        child: Column(children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(color: Tok.inset, borderRadius: BorderRadius.circular(10), border: Border.all(color: Tok.lineInset)),
-            child: const Icon(Ico.ask, size: 16, color: Tok.text2),
-          ),
-          const SizedBox(height: 10),
-          Text(t('ask.p.oneTitle'), style: Tok.nav.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text(t('ask.p.oneBody'), textAlign: TextAlign.center, style: Tok.sub.copyWith(fontSize: 12.5, height: 18 / 12.5)),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(color: Tok.inset, borderRadius: BorderRadius.circular(12), border: Border.all(color: Tok.lineInset)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Semantics(
+              header: true, child: Text(t('ask.p.wontTitle'), style: Tok.body.copyWith(fontWeight: FontWeight.w600, height: 18 / 13))),
+          const SizedBox(height: 7),
+          for (var n = 1; n <= 3; n++)
+            Padding(
+              padding: EdgeInsets.only(top: n == 1 ? 0 : 4),
+              child: Row(children: [
+                const Icon(Icons.block, size: 13, color: Tok.text3),
+                const SizedBox(width: 8),
+                Expanded(child: Text(t('ask.p.wont$n'), style: Tok.body.copyWith(height: 20 / 13, color: _bodyInk))),
+              ]),
+            ),
         ]),
       ),
     ]);
