@@ -549,7 +549,7 @@ Widget _countBox(IconData icon, String label, String value, {Widget? trailing, b
         Icon(icon, size: 14, color: amber ? Tok.amberIcon : Tok.text3),
         const SizedBox(width: 9),
         Expanded(child: Text(label, style: Tok.body.copyWith(color: amber ? Tok.amberText : Tok.ink, fontWeight: amber ? FontWeight.w500 : null))),
-        if (value.isNotEmpty) Text(value, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+        if (value.isNotEmpty) Padding(padding: const EdgeInsets.only(left: 8), child: Text(value, style: Tok.body.copyWith(fontWeight: FontWeight.w600))),
         ?trailing,
       ]),
     );
