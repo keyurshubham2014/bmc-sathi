@@ -176,6 +176,12 @@ describe("scorecards", () => {
     expect(s.redo.followed_up_jobs).toBe(row.links);
     expect(s.redo.followup_jobs).toBe(row.jobs);
   });
+  it("counts late jobs by what happened to the clock", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    expect(s.late).toEqual({ expired_before_assignment: 101, too_little_time_left: 69, had_time: 9 });
+    const one = await api().get("/api/v1/contractors/CT03/work-orders?filter=too_little_time_left&limit=1").set(as("citizen"));
+    expect(one.body.total).toBe(s.late.too_little_time_left);
+  });
   it("shows too few jobs, not a band, for a small ward", async () => {
     const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
     expect(s.measures.speed_fair.band).toBe("too_few");

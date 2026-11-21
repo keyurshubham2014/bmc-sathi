@@ -27,8 +27,14 @@ export async function scorecard(type: "contractor" | "ward", id: string) {
              WHERE work_order_id IN (SELECT followup_work_order_id FROM v_followup WHERE ${col} = ${id})) AS followup_spend,
            (COUNT(*) FILTER (WHERE followup_contractor_id <> contractor_id))::int AS followup_by_other
     FROM v_followup WHERE ${col} = ${id}`;
+  // Missed jobs by what happened to the clock before the work began.
+  const [late] = await db.$queryRaw<any[]>`
+    SELECT (COUNT(*) FILTER (WHERE miss_cause = 'expired_before_assignment'))::int AS expired_before_assignment,
+           (COUNT(*) FILTER (WHERE miss_cause = 'too_little_time_left'))::int AS too_little_time_left,
+           (COUNT(*) FILTER (WHERE miss_cause = 'had_time'))::int AS had_time
+    FROM v_work_order_delay WHERE ${col} = ${id}`;
   return {
-    jobs, spend, wards, heavy_rain_jobs, low_lying_jobs, unreachable_targets, redo,
+    jobs, spend, wards, heavy_rain_jobs, low_lying_jobs, unreachable_targets, redo, late,
     measures: Object.fromEntries(rows.map((r) => [r.measure, { observed: r.observed, expected: r.expected, n: r.n, band: r.band, flagged: r.flagged }])),
   };
 }
