@@ -35,7 +35,7 @@ CROSS JOIN LATERAL (
 LEFT JOIN (SELECT date, MAX(rainfall_mm) AS mm FROM rainfall_daily GROUP BY date) rn
        ON rn.date = COALESCE(w.completed_at, w.assigned_at)::date;
 
--- Each job's clock split at assignment: the wait before it (ward office) and the work after it (contractor).
+-- Each job's clock split at assignment: the wait before the contractor had the job, and the work after it.
 -- The clock starts at the first linked complaint, so jobs with no complaint are left out.
 CREATE VIEW v_work_order_delay AS
 WITH d AS (

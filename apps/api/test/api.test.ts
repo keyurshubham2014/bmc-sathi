@@ -152,6 +152,13 @@ describe("scorecards", () => {
     const late = await api().get("/api/v1/contractors/CT03/work-orders?filter=had_time&limit=1").set(as("citizen"));
     expect(late.body.total).toBe(Math.round(s.measures.speed_fair.n * (1 - s.measures.speed_fair.observed)));
   });
+  it("tells the summary writer when a job was assigned, not who was at fault", async () => {
+    const { readFileSync } = await import("node:fs");
+    const prompt = readFileSync(new URL("../src/pipeline/summarise.ts", import.meta.url), "utf8");
+    expect(prompt).toContain("assign_wait");
+    expect(prompt).not.toMatch(/ward office|prefer it/);
+    expect(prompt).toContain("give both");
+  });
   it("shows too few jobs, not a band, for a small ward", async () => {
     const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
     expect(s.measures.speed_fair.band).toBe("too_few");

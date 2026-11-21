@@ -59,7 +59,7 @@ Result: 5 rows per subject, so 40 contractor rows and 120 ward rows.
 
 **Summary prompt.** `pipeline/summarise.ts` learns the two measures in one sentence each. Existing summaries become stale through the existing facts hash and are not re-run. *Decided.*
 
-**Checks.** `db:verify`: contractor scorecard rows go from 24 to 40 and ward rows from 72 to 120; plus a check that the three miss causes add up to the missed jobs with a complaint (1,235 on imported data: 441, 690, 104). `api.test.ts`: the ward measure list becomes five names; new tests pin that CT03's `speed_fair` band is `similar`, that a contractor's `assign_wait` band is `context`, and that Ward L's `assign_wait` is banded below similar jobs.
+**Checks.** `db:verify`: contractor scorecard rows go from 24 to 40 and ward rows from 72 to 120; plus a check that the three miss causes add up to the missed jobs with a complaint (1,235 on imported data: 441, 700, 94, with typical hours taken over jobs that have a complaint). `api.test.ts`: the ward measure list becomes five names; new tests pin that CT03's `speed_fair` band is `similar`, that a contractor's `assign_wait` band is `context`, and that Ward L's `assign_wait` is banded below similar jobs.
 
 ## Left to the builder
 
