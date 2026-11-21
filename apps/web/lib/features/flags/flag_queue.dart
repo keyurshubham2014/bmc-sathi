@@ -159,7 +159,7 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
           WorksColumn(t('flags.col.wo'), width: 122),
           WorksColumn(t('flags.col.road'), flex: 5),
           WorksColumn(t('flags.col.contractor'), flex: 5),
-          WorksColumn(t('flags.atStake'), width: 84, numeric: true),
+          WorksColumn(t('flags.atStake'), width: 100, numeric: true),
           WorksColumn(t('flags.col.reason'), flex: 6),
           WorksColumn(t('flags.col.decision'), width: 124),
         ],

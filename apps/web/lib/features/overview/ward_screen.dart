@@ -256,7 +256,7 @@ class _MoneyInQuestion extends ConsumerWidget {
           link: t('ward.mt.seeJobs'), onLink: () => onOpen(t('ward.tile.dlp'), 'filter=dlp')),
       card(2, FlagPill(t('ward.mt.unreviewedPill')), t('ward.tile.flags'), w['open_flag_amount'] as num, t('ward.jobs', {'n': w['open_flags']}),
           amberUnit: true,
-          link: t('ward.mt.reviewFlags', {'n': openFlagCount(ref, code) ?? w['open_flags']}),
+          link: t('ward.mt.reviewFlags', {'n': (session.canSeeFlags ? openFlagCount(ref, code) : null) ?? w['open_flags']}),
           onLink: session.canSeeFlags ? () => context.go('/flags?ward=${Uri.encodeComponent(code)}') : null),
     ];
     return Panel(
