@@ -31,6 +31,13 @@ final flagsProvider = FutureProvider.family<Map<String, dynamic>, FlagQuery>((re
 final flagSummaryProvider = FutureProvider.family<List<Map<String, dynamic>>, String?>((ref, ward) async =>
     List<Map<String, dynamic>>.from((await apiGet(ref, '/flags/summary', {'ward_code': ward}))['items']));
 
+/// Open flags (tier 'flag', not watch items) in a ward or, with null, the city. Every "N flags" count uses this.
+int? openFlagCount(WidgetRef ref, String? ward) {
+  final items = ref.watch(flagSummaryProvider(ward)).value;
+  if (items == null) return null;
+  return items.where((i) => i['tier'] == 'flag' && i['decision'] == 'open').fold<int>(0, (a, i) => a + ((i['count'] as num?)?.toInt() ?? 0));
+}
+
 /// Queue filters live outside the page so they survive opening and closing a flag (each is its own route).
 /// contractor '' = all.
 typedef _Ui = ({int tab, String decision, String contractor, String search});
@@ -103,7 +110,7 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
     num agg(bool Function(Map<String, dynamic>) where, String field) =>
         summary.where(where).fold<num>(0, (a, s) => a + (s[field] as num));
     num tabOpen(int i) => agg((s) => s['flag_type'] == flagTabs[i].$2 && s['tier'] == flagTabs[i].$3 && s['decision'] == 'open', 'count');
-    final openAll = agg((s) => s['decision'] == 'open', 'count');
+    final openAll = agg((s) => s['tier'] == 'flag' && s['decision'] == 'open', 'count');
 
     String withWard(String path) => session.isOfficer || ward == null ? path : '$path?ward=$ward';
     void close() {
@@ -149,12 +156,12 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
       final sel = rows.indexWhere((f) => f['work_order_id'] == widget.id);
       return WorksTable(
         columns: [
-          WorksColumn(t('flags.col.wo'), width: 112),
-          WorksColumn(t('flags.col.road'), flex: 4),
-          WorksColumn(t('flags.col.contractor'), flex: 4),
-          WorksColumn(t('flags.atStake'), width: 96, numeric: true),
+          WorksColumn(t('flags.col.wo'), width: 122),
+          WorksColumn(t('flags.col.road'), flex: 5),
+          WorksColumn(t('flags.col.contractor'), flex: 5),
+          WorksColumn(t('flags.atStake'), width: 84, numeric: true),
           WorksColumn(t('flags.col.reason'), flex: 6),
-          WorksColumn(t('flags.col.decision'), width: 172),
+          WorksColumn(t('flags.col.decision'), width: 124),
         ],
         selected: sel < 0 ? null : sel,
         onRowTap: (i) {

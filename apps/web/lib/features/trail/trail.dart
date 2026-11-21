@@ -652,6 +652,7 @@ class _TrailBody extends ConsumerWidget {
                           child: SizedBox(
                             height: 8,
                             child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(flex: (above ? exp : cost).round().clamp(1, 1 << 31), child: const ColoredBox(color: Tok.teal)),
                                 const SizedBox(width: 2),

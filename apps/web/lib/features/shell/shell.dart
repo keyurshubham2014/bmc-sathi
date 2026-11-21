@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
-import '../flags/flag_queue.dart' show flagSummaryProvider;
+import '../flags/flag_queue.dart' show openFlagCount;
 
 /// The app shell from 03-ward-money-trail.html: ground, one rounded shell, 232 px sidebar, content column
 /// with the top bar. Pages set the top bar with `SetTopBar` and open the right panel with `showDetail`
@@ -162,12 +162,7 @@ class _ShellState extends ConsumerState<Shell> {
     ];
   }
 
-  /// Open flags (all tiers, decision still open) in the officer's ward or, for an auditor, the city.
-  int? _openFlags(Session s) {
-    final items = ref.watch(flagSummaryProvider(s.isOfficer ? s.wardCode : null)).value;
-    if (items == null) return null;
-    return items.where((i) => i['decision'] == 'open').fold<int>(0, (a, i) => a + ((i['count'] as num?)?.toInt() ?? 0));
-  }
+  int? _openFlags(Session s) => openFlagCount(ref, s.isOfficer ? s.wardCode : null);
 }
 
 class _Item {

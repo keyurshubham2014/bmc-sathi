@@ -402,9 +402,9 @@ class _DecisionState extends ConsumerState<_DecisionForm> {
       Row(children: [
         for (final (i, d) in choices.indexed) ...[
           if (i > 0) const SizedBox(width: 6),
-          // Width follows the label length, as in the design.
+          // Widths fit the English labels in a 440 px panel, incl. the alert icon on a chosen "Confirmed".
           Expanded(
-            flex: t('decision.$d').length + 6,
+            flex: d == 'needs_explanation' ? 12 : 9,
             child: _Choice(t('decision.$d'), red: d == 'confirmed', selected: _decision == d, onTap: _busy ? null : () => setState(() => _decision = d)),
           ),
         ],
@@ -479,7 +479,7 @@ class _Choice extends StatelessWidget {
         semanticLabel: label,
         child: Container(
           height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             color: selected ? (redOn ? Tok.redTint : Tok.tealTint) : Tok.panel,
             borderRadius: BorderRadius.circular(Tok.rControl),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../flags/flag_queue.dart' show openFlagCount;
 import '../../core/app_state.dart';
 import '../../core/format.dart' as fmt;
 import '../../core/strings.dart';
@@ -47,7 +48,7 @@ class _CityState extends ConsumerState<CityScreen> {
   Widget build(BuildContext context) {
     final t = ref.watch(stringsProvider);
     final wardsAsync = ref.watch(wardsProvider);
-    final flags = wardsAsync.value?.fold<num>(0, (s, w) => s + (w['open_flags'] as num)) ?? 0;
+    final flags = openFlagCount(ref, null) ?? wardsAsync.value?.fold<num>(0, (s, w) => s + (w['open_flags'] as num)) ?? 0;
     return SetTopBar(
       title: t('city.top'),
       titleSuffix: t('city.topSuffix', {'n': wardsAsync.value?.length ?? 24}),

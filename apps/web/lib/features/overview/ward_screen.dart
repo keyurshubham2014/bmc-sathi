@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../flags/flag_queue.dart' show openFlagCount;
 import '../../core/app_state.dart';
 import '../../core/format.dart' as fmt;
 import '../../core/strings.dart';
@@ -40,7 +41,7 @@ class WardScreen extends ConsumerWidget {
           ? AskButton('ward', code)
           : w == null
               ? null
-              : AppButton.primary(t('ward.mt.reviewFlags', {'n': w['open_flags']}),
+              : AppButton.primary(t('ward.mt.reviewFlags', {'n': openFlagCount(ref, code) ?? w['open_flags']}),
                   icon: Ico.flag, onPressed: () => context.go('/flags?ward=${Uri.encodeComponent(code)}')),
       child: PageBody(children: [
         if (tab == 'plan')
@@ -253,9 +254,9 @@ class _MoneyInQuestion extends ConsumerWidget {
           link: t('ward.mt.seeJobs'), onLink: () => onOpen(t('ward.mt.reopened30'), 'filter=reopened')),
       card(1, StatusPill(t('ward.mt.underDlp'), dot: Tok.amberIcon), t('ward.tile.dlp'), w['dlp_spend'] as num, t('ward.jobs', {'n': w['dlp_jobs']}),
           link: t('ward.mt.seeJobs'), onLink: () => onOpen(t('ward.tile.dlp'), 'filter=dlp')),
-      card(2, FlagPill(t('ward.mt.unreviewedPill')), t('ward.tile.flags'), w['open_flag_amount'] as num, t('ward.flagsN', {'n': w['open_flags']}),
+      card(2, FlagPill(t('ward.mt.unreviewedPill')), t('ward.tile.flags'), w['open_flag_amount'] as num, t('ward.jobs', {'n': w['open_flags']}),
           amberUnit: true,
-          link: t('ward.mt.reviewFlags', {'n': w['open_flags']}),
+          link: t('ward.mt.reviewFlags', {'n': openFlagCount(ref, code) ?? w['open_flags']}),
           onLink: session.canSeeFlags ? () => context.go('/flags?ward=${Uri.encodeComponent(code)}') : null),
     ];
     return Panel(
