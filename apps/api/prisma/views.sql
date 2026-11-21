@@ -229,6 +229,53 @@ ctx AS (
          percentile_cont(0.5) WITHIN GROUP (ORDER BY cost_ratio) AS median_ratio,
          (COUNT(*) FILTER (WHERE cost_ratio > cfg('overbill_ratio')))::int AS over_jobs
   FROM jobs GROUP BY 1, 2
+),
+-- The same comparison for the two delay measures, over jobs whose clock is known.
+dj AS (
+  SELECT 'contractor' AS subject_type, contractor_id AS subject_id, d.* FROM v_work_order_delay d
+  UNION ALL
+  SELECT 'ward', ward_code, d.* FROM v_work_order_delay d
+),
+dcell AS (
+  SELECT subject_type, subject_id, work_type, repair_method, rain_band, ward_type,
+         COUNT(*) FILTER (WHERE fair_chance) AS n_fair, COUNT(*) FILTER (WHERE fair_chance AND sla_met) AS fair_on,
+         COUNT(*) AS n_wait, SUM(hours_to_assign) AS sum_wait, SUM(hours_to_assign * hours_to_assign) AS sq_wait
+  FROM dj GROUP BY 1, 2, 3, 4, 5, 6
+),
+dstrat AS (
+  SELECT work_type, repair_method, rain_band, ward_type,
+         COUNT(*) FILTER (WHERE fair_chance) AS n_fair, COUNT(*) FILTER (WHERE fair_chance AND sla_met) AS fair_on,
+         COUNT(*) AS n_wait, SUM(hours_to_assign) AS sum_wait
+  FROM v_work_order_delay GROUP BY 1, 2, 3, 4
+),
+dwide_all AS (
+  SELECT work_type, repair_method, SUM(n_fair) AS n_fair, SUM(fair_on) AS fair_on, SUM(n_wait) AS n_wait, SUM(sum_wait) AS sum_wait
+  FROM dstrat GROUP BY 1, 2
+),
+dwide_own AS (
+  SELECT subject_type, subject_id, work_type, repair_method,
+         SUM(n_fair) AS n_fair, SUM(fair_on) AS fair_on, SUM(n_wait) AS n_wait, SUM(sum_wait) AS sum_wait
+  FROM dcell GROUP BY 1, 2, 3, 4
+),
+dx AS (
+  SELECT c.subject_type, c.subject_id, c.n_fair, c.fair_on, c.n_wait, c.sum_wait, c.sq_wait,
+         CASE WHEN s.n_fair - c.n_fair >= 5 THEN (s.fair_on - c.fair_on)::float8 / (s.n_fair - c.n_fair)
+              ELSE (wa.fair_on - wo.fair_on)::float8 / NULLIF(wa.n_fair - wo.n_fair, 0) END AS exp_fair,
+         CASE WHEN s.n_wait - c.n_wait >= 5 THEN (s.sum_wait - c.sum_wait) / (s.n_wait - c.n_wait)
+              ELSE (wa.sum_wait - wo.sum_wait) / NULLIF(wa.n_wait - wo.n_wait, 0) END AS exp_wait
+  FROM dcell c
+  JOIN dstrat s     USING (work_type, repair_method, rain_band, ward_type)
+  JOIN dwide_all wa USING (work_type, repair_method)
+  JOIN dwide_own wo USING (subject_type, subject_id, work_type, repair_method)
+),
+dagg AS (
+  SELECT subject_type, subject_id,
+         SUM(n_fair)::bigint AS n_fair, SUM(fair_on)::float8 / NULLIF(SUM(n_fair), 0) AS obs_fair,
+         SUM(n_fair * exp_fair) / NULLIF(SUM(n_fair) FILTER (WHERE exp_fair IS NOT NULL), 0) AS exp_fair,
+         SUM(n_wait)::bigint AS n_wait, SUM(sum_wait) / NULLIF(SUM(n_wait), 0) AS obs_wait,
+         SUM(n_wait * exp_wait) / NULLIF(SUM(n_wait) FILTER (WHERE exp_wait IS NOT NULL), 0) AS exp_wait,
+         sqrt(GREATEST(SUM(sq_wait) / NULLIF(SUM(n_wait), 0) - power(SUM(sum_wait) / NULLIF(SUM(n_wait), 0), 2), 0)) AS sd_wait
+  FROM dx GROUP BY 1, 2
 )
 SELECT c.subject_type, c.subject_id, 'speed' AS measure, a.obs_sla AS observed, a.exp_sla AS expected,
        a.n_sla AS n, band(a.n_sla, (a.obs_sla - a.exp_sla) / NULLIF(sqrt(a.exp_sla * (1 - a.exp_sla) / NULLIF(a.n_sla, 0)), 0)) AS band,
@@ -246,7 +293,20 @@ SELECT c.subject_type, c.subject_id, 'cost', c.median_ratio, 1, c.jobs::bigint,
        CASE WHEN c.over_jobs::float8 / c.jobs > 2 * (SELECT AVG((cost_ratio > cfg('overbill_ratio'))::int) FROM v_work_order)
             THEN 'review' ELSE 'typical' END,
        c.over_jobs, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
-FROM ctx c;
+FROM ctx c
+UNION ALL
+-- On time among jobs that reached the subject with enough time left.
+SELECT c.subject_type, c.subject_id, 'speed_fair', d.obs_fair, d.exp_fair, COALESCE(d.n_fair, 0),
+       band(COALESCE(d.n_fair, 0), (d.obs_fair - d.exp_fair) / NULLIF(sqrt(d.exp_fair * (1 - d.exp_fair) / NULLIF(d.n_fair, 0)), 0)),
+       NULL::int, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
+FROM ctx c LEFT JOIN dagg d USING (subject_type, subject_id)
+UNION ALL
+-- Hours a job waited before it was assigned. Fewer is better. A ward assigns jobs; a contractor does not, so it gets no band.
+SELECT c.subject_type, c.subject_id, 'assign_wait', d.obs_wait, d.exp_wait, COALESCE(d.n_wait, 0),
+       CASE WHEN c.subject_type = 'contractor' THEN 'context'
+            ELSE band(COALESCE(d.n_wait, 0), (d.exp_wait - d.obs_wait) / NULLIF(d.sd_wait / sqrt(NULLIF(d.n_wait, 0)), 0)) END,
+       NULL::int, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
+FROM ctx c LEFT JOIN dagg d USING (subject_type, subject_id);
 
 -- ---------- next-rupee plan ----------
 

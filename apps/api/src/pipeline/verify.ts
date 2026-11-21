@@ -47,8 +47,8 @@ if ((await one(`SELECT COUNT(*) n FROM issue`)) > 0) {
   check("complaints with no enrichment", await one(`SELECT COUNT(*) n FROM complaint c WHERE NOT EXISTS (SELECT 1 FROM complaint_enriched e WHERE e.complaint_id = c.complaint_id)`), 0);
   check("open complaints not in an issue", await one(`SELECT COUNT(*) n FROM complaint c JOIN complaint_enriched e USING (complaint_id) WHERE c.status IN ('Open','In Progress') AND e.issue_id IS NULL AND e.ward_code_resolved IS NOT NULL`), 0);
   check("complaints still without a ward", await one(`SELECT COUNT(*) n FROM complaint_enriched WHERE ward_code_resolved IS NULL AND location_source <> 'none'`), 0);
-  check("contractor scorecard rows", await one(`SELECT COUNT(*) n FROM v_scorecard WHERE subject_type = 'contractor'`), 24);
-  check("ward scorecard rows", await one(`SELECT COUNT(*) n FROM v_scorecard WHERE subject_type = 'ward'`), 72);
+  check("contractor scorecard rows", await one(`SELECT COUNT(*) n FROM v_scorecard WHERE subject_type = 'contractor'`), 40);
+  check("ward scorecard rows", await one(`SELECT COUNT(*) n FROM v_scorecard WHERE subject_type = 'ward'`), 120);
   check("wards with a plan", await one(`SELECT COUNT(DISTINCT ward_code) n FROM v_plan`), 24);
   check("plan rows with no method", await one(`SELECT COUNT(*) n FROM v_plan WHERE recommended_method IS NULL OR estimated_cost IS NULL`), 0);
 }

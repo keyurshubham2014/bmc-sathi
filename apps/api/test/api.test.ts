@@ -122,7 +122,32 @@ describe("scorecards", () => {
   });
   it("gives every ward a scorecard", async () => {
     const s = (await api().get(`/api/v1/wards/${encodeURIComponent("F/S")}/scorecard`).set(as("citizen"))).body.scorecard;
-    expect(Object.keys(s.measures).sort()).toEqual(["cost", "durability", "speed"]);
+    expect(Object.keys(s.measures).sort()).toEqual(["assign_wait", "cost", "durability", "speed", "speed_fair"]);
+  });
+  it("judges speed only on jobs that had enough time", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    expect(s.measures.speed.band).toBe("well_below"); // the plain on-time figure is unchanged
+    expect(s.measures.speed_fair.band).toBe("similar");
+    expect(s.measures.speed_fair.observed).toBeGreaterThan(0.85);
+    expect(s.measures.assign_wait.band).toBe("context");
+    expect(s.measures.assign_wait.observed).toBeGreaterThan(70);
+  });
+  it("holds a ward to its time to assign", async () => {
+    const s = (await api().get("/api/v1/wards/L/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.measures.assign_wait.observed).toBeGreaterThan(s.measures.assign_wait.expected);
+    expect(["below", "well_below"]).toContain(s.measures.assign_wait.band);
+  });
+  it("names targets shorter than the work takes", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    const types = s.unreachable_targets.map((t: any) => t.work_type);
+    expect(types).toContain("Road cave-in");
+    expect(types).toContain("Open or broken manhole");
+    expect(types).not.toContain("Broken paver blocks");
+    for (const t of s.unreachable_targets) expect(t.sla_hours).toBeLessThan(t.typical_hours);
+  });
+  it("shows too few jobs, not a band, for a small ward", async () => {
+    const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.measures.speed_fair.band).toBe("too_few");
   });
 });
 
@@ -259,6 +284,9 @@ describe("ask", () => {
     const row = await db.summary.findUnique({ where });
     if (!row) return; // summarise has not been run on this database
     const get = async () => (await api().get("/api/v1/ask/summary?type=ward&id=E").set(as("citizen"))).body.summary.stale;
+    // Fresh means the stored hash matches today's figures, whenever the summary was written.
+    const { factsHash } = await import("../src/modules/ask");
+    await db.summary.update({ where, data: { facts_hash: (await factsHash("ward", "E")).hash } });
     expect(await get()).toBe(false);
     await db.summary.update({ where, data: { facts_hash: "old" } });
     expect(await get()).toBe(true);
