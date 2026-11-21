@@ -38,6 +38,15 @@ if ((await one(`SELECT COUNT(*) n FROM work_order WHERE source <> 'import'`)) ==
   check("misses: too little time left", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE miss_cause='too_little_time_left'`), 700);
   check("misses: had time", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE miss_cause='had_time'`), 94);
 }
+check("ward recoverable rows", await one(`SELECT COUNT(*) n FROM v_ward_recoverable`), 24);
+check("recoverable shares that do not add up", await one(`SELECT COUNT(*) n FROM v_ward_recoverable WHERE confirmed_total <> confirmed_billing + confirmed_dlp OR possible_total <> possible_billing + possible_dlp`), 0);
+check("funded items that recovery would unfund", await one(`SELECT COUNT(*) n FROM v_plan WHERE within_budget AND NOT (within_recovered AND within_possible)`), 0);
+// Reference values hold only while nothing has been added or decided.
+if ((await one(`SELECT (SELECT COUNT(*) FROM work_order WHERE source <> 'import') + (SELECT COUNT(*) FROM flag_decision) n`)) === 0) {
+  check("recoverable if every flag were confirmed (rupees)", await one(`SELECT SUM(possible_total) n FROM v_ward_recoverable`), 33_467_546);
+  check("recoverable already confirmed", await one(`SELECT SUM(confirmed_total) n FROM v_ward_recoverable`), 0);
+  check("plan items funded if every flag were recovered", await one(`SELECT COUNT(*) n FROM v_plan WHERE within_possible`), 640);
+}
 check("missed jobs with no cause", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE NOT sla_met AND miss_cause IS NULL`), 0);
 check("negative waits", await one(`SELECT COUNT(*) n FROM v_work_order_delay WHERE hours_to_assign < 0`), 0);
 check("delay rows without a complaint", await one(`SELECT COUNT(*) n FROM v_work_order_delay d WHERE NOT EXISTS (SELECT 1 FROM work_order_complaint l WHERE l.work_order_id = d.work_order_id)`), 0);

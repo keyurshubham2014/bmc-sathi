@@ -166,6 +166,38 @@ describe("scorecards", () => {
 });
 
 describe("next-rupee plan", () => {
+  const planE = async (who = "auditor") => (await api().get("/api/v1/wards/E/plan").set(as(who))).body;
+  const decideOne = async (decision: string, check: (before: any, after: any) => void) => {
+    const before = await planE();
+    const flag = (await api().get("/api/v1/flags?type=overbilled&ward_code=E&decision=open&limit=1").set(as("auditor"))).body.items[0];
+    await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("auditor")).send({ decision });
+    try {
+      check(before, await planE());
+    } finally {
+      await db.flag_decision.deleteMany({ where: { flag_type: "overbilled", work_order_id: flag.work_order_id } });
+    }
+  };
+  it("moves recoverable money from possible to confirmed when a flag is confirmed", async () => {
+    await decideOne("confirmed", (before, after) => {
+      const moved = after.recoverable.confirmed_total - before.recoverable.confirmed_total;
+      expect(moved).toBeGreaterThan(0);
+      expect(before.recoverable.possible_total - after.recoverable.possible_total).toBe(moved);
+      expect(after.items.map((i: any) => i.within_budget)).toEqual(before.items.map((i: any) => i.within_budget));
+      expect(after.ward.remaining).toBe(before.ward.remaining);
+    });
+  });
+  it("does not count a dismissed flag as recoverable", async () => {
+    await decideOne("not_an_issue", (before, after) => {
+      expect(after.recoverable.possible_total).toBeLessThan(before.recoverable.possible_total);
+      expect(after.recoverable.confirmed_total).toBe(before.recoverable.confirmed_total);
+    });
+  });
+  it("gives a citizen the recoverable totals and what they would fund", async () => {
+    const r = await planE("citizen");
+    expect(Object.keys(r.recoverable).sort()).toEqual(["confirmed_billing", "confirmed_dlp", "confirmed_total", "possible_billing", "possible_dlp", "possible_total", "ward_code"]);
+    expect(r.items.every((i: any) => typeof i.within_recovered === "boolean" && typeof i.within_possible === "boolean")).toBe(true);
+    expect(r.items.filter((i: any) => i.within_possible).length).toBe(26); // Ward E is overspent; recovery would fund all 26
+  });
   it("ranks by risk with parts that add up and a correct budget line", async () => {
     const r = (await api().get("/api/v1/wards/B/plan").set(as("citizen"))).body;
     expect(r.items.length).toBeGreaterThan(0);

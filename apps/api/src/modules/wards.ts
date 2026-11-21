@@ -87,8 +87,11 @@ wards.get("/:code/plan", async (req, res) => {
     SELECT issue_id, rank, road_id, road_name, segment_no, road_type, category, severity, complaint_count, upvotes_total,
            days_open, accidents, hospital_entry_count, school_count, bus_route, near_hotspot_id, high_risk, risk_score,
            pts_severity, pts_access, pts_safety, pts_traffic, pts_flood, pts_demand, recommended_method,
-           recommended_reopen_rate, estimated_cost, alt_method, alt_cost, alt_reopen_rate, cumulative_cost, within_budget
+           recommended_reopen_rate, estimated_cost, alt_method, alt_cost, alt_reopen_rate, cumulative_cost, within_budget,
+           within_recovered, within_possible
     FROM v_plan WHERE ward_code = ${req.params.code} ORDER BY rank`;
   const weights = await db.setting.findMany({ where: { key: { startsWith: "w_" } } });
-  res.json({ ward, items, weights: Object.fromEntries(weights.map((w) => [w.key, w.value])) });
+  // Totals only: what flagged money would fund. The flag rows themselves stay behind the flags routes.
+  const [recoverable] = await db.$queryRaw<any[]>`SELECT * FROM v_ward_recoverable WHERE ward_code = ${req.params.code}`;
+  res.json({ ward, recoverable, items, weights: Object.fromEntries(weights.map((w) => [w.key, w.value])) });
 });

@@ -1,7 +1,7 @@
 -- All audit and money views. Rerunnable: drops and recreates everything.
 -- Rules read thresholds from the setting table, so they change without a redeploy.
 
-DROP VIEW IF EXISTS v_work_order_delay, v_plan, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
+DROP VIEW IF EXISTS v_work_order_delay, v_plan, v_ward_recoverable, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
 
 CREATE OR REPLACE FUNCTION cfg(k text) RETURNS double precision
 LANGUAGE sql STABLE AS $$ SELECT value FROM setting WHERE key = k $$;
@@ -145,6 +145,32 @@ LEFT JOIN (
         GROUP BY ward_code, work_order_id) t
   GROUP BY ward_code
 ) fl ON fl.ward_code = wd.ward_code;
+
+-- Flagged money per ward: confirmed by a decision, or still possible (open or awaiting an explanation).
+-- A work order never counts for more than its largest flag that has not been dismissed. Its confirmed part
+-- is its largest confirmed flag; whatever is left of the largest amount stays possible.
+CREATE VIEW v_ward_recoverable AS
+WITH f AS (
+  SELECT ward_code, work_order_id, amount_at_stake AS amt, (flag_type = 'dlp') AS is_dlp, (decision = 'confirmed') AS is_confirmed
+  FROM v_flag WHERE tier = 'flag' AND decision <> 'not_an_issue'
+),
+w AS (
+  SELECT ward_code, work_order_id,
+         COALESCE(MAX(amt) FILTER (WHERE is_confirmed), 0)                                    AS c_amt,
+         COALESCE((array_agg(is_dlp ORDER BY amt DESC) FILTER (WHERE is_confirmed))[1], false) AS c_dlp,
+         MAX(amt)                                                                             AS t_amt,
+         (array_agg(is_dlp ORDER BY amt DESC))[1]                                             AS t_dlp
+  FROM f GROUP BY 1, 2
+)
+SELECT wd.ward_code,
+       COALESCE(SUM(c_amt) FILTER (WHERE NOT c_dlp), 0)::bigint         AS confirmed_billing,
+       COALESCE(SUM(c_amt) FILTER (WHERE c_dlp), 0)::bigint             AS confirmed_dlp,
+       COALESCE(SUM(c_amt), 0)::bigint                                  AS confirmed_total,
+       COALESCE(SUM(t_amt - c_amt) FILTER (WHERE NOT t_dlp), 0)::bigint AS possible_billing,
+       COALESCE(SUM(t_amt - c_amt) FILTER (WHERE t_dlp), 0)::bigint     AS possible_dlp,
+       COALESCE(SUM(t_amt - c_amt), 0)::bigint                          AS possible_total
+FROM ward wd LEFT JOIN w USING (ward_code)
+GROUP BY wd.ward_code;
 
 -- Spend per ward by contractor, repair method and week.
 CREATE VIEW v_ward_spend_breakdown AS
@@ -418,5 +444,9 @@ o AS (
   FROM i JOIN pick pk USING (issue_id)
 )
 SELECT o.*, wm.remaining AS ward_remaining,
-       (wm.remaining > 0 AND o.cumulative_cost <= wm.remaining) AS within_budget
-FROM o JOIN v_ward_money wm USING (ward_code);
+       (wm.remaining > 0 AND o.cumulative_cost <= wm.remaining) AS within_budget,
+       -- Recovered money pays off any overspend first. It never changes within_budget.
+       (wm.remaining + rv.confirmed_total > 0 AND o.cumulative_cost <= wm.remaining + rv.confirmed_total) AS within_recovered,
+       (wm.remaining + rv.confirmed_total + rv.possible_total > 0
+        AND o.cumulative_cost <= wm.remaining + rv.confirmed_total + rv.possible_total)                    AS within_possible
+FROM o JOIN v_ward_money wm USING (ward_code) JOIN v_ward_recoverable rv USING (ward_code);
