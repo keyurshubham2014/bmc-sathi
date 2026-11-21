@@ -1850,8 +1850,8 @@ class BudgetLine extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     container: true,
     label: [title, ?sub].join('. '),
-    child: SizedBox(
-      height: 66,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 66),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1901,13 +1901,16 @@ class BudgetLine extends StatelessWidget {
                   child: Icon(icon, size: 16, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(title, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
-                    if (sub != null) Text(sub!, style: Tok.sub),
-                  ],
+                // Flexible so a long label wraps on a narrow screen instead of overflowing.
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+                      if (sub != null) Text(sub!, style: Tok.sub),
+                    ],
+                  ),
                 ),
               ],
             ),
