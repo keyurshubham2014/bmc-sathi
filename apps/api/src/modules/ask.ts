@@ -15,7 +15,7 @@ export const ask = Router();
 // shortcut: counts live in this process's memory, move to a shared store when more than one API instance runs.
 const asked = new Map<number, number[]>();
 const ASKS_PER_MINUTE = 10;
-function rateLimit(userId: number) {
+export function rateLimit(userId: number) {
   const now = Date.now();
   const recent = (asked.get(userId) ?? []).filter((t) => now - t < 60_000);
   if (recent.length >= ASKS_PER_MINUTE) throw new AppError("too_many_requests", "Too many questions. Try again in a minute.");

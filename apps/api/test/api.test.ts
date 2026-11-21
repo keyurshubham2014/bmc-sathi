@@ -392,3 +392,46 @@ describe("ask", () => {
     expect(f.top_of_plan.length).toBeGreaterThan(0);
   });
 });
+
+describe("action pack", () => {
+  const draft = (who: string, body: object) => api().post("/api/v1/flags/draft").set(as(who)).send(body);
+  it("is for officers and auditors, inside their own ward", async () => {
+    expect((await draft("citizen", { kind: "dlp", road_id: "RD0220" })).status).toBe(403);
+    expect((await draft("officer.e", { kind: "billing", contractor_id: "CT03", ward_code: "L" })).status).toBe(403);
+    expect((await draft("officer.e", { kind: "dlp", road_id: "RD0220" })).status).toBe(403); // RD0220 is in ward L
+    expect((await draft("auditor", { kind: "dlp", road_id: "NOPE" })).status).toBe(404);
+    expect((await draft("auditor", { kind: "billing", contractor_id: "CT03" })).status).toBe(400);
+  });
+  it("has nothing to draft until a flag in the group is decided", async () => {
+    const r = await draft("auditor", { kind: "billing", contractor_id: "CT01", ward_code: "E", plain: true });
+    expect(r.status).toBe(409);
+  });
+  it("drafts one document naming every decided job in the group", async () => {
+    const [flag] = await db.$queryRaw<any[]>`
+      SELECT work_order_id, contractor_id, amount_at_stake FROM v_flag f WHERE ward_code = 'E' AND flag_type = 'overbilled' AND tier = 'flag' AND decision = 'open'
+        AND NOT EXISTS (SELECT 1 FROM v_flag o WHERE o.work_order_id = f.work_order_id AND o.flag_type <> 'overbilled') LIMIT 1`;
+    try {
+      await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("officer.e")).send({ decision: "needs_explanation", note: "Area looks small for this bill" });
+      const r = await draft("officer.e", { kind: "billing", contractor_id: flag.contractor_id, ward_code: "E", lang: "mr", plain: true });
+      expect(r.status).toBe(200);
+      expect(r.body.source).toBe("template");
+      expect(r.body.lang).toBe("en"); // the template is English only
+      expect(r.body.work_order_ids).toEqual([flag.work_order_id]);
+      expect(r.body.total_amount).toBe(flag.amount_at_stake);
+      expect(r.body.draft.body.startsWith("DRAFT FOR REVIEW")).toBe(true);
+      expect(r.body.draft.body).toContain(flag.work_order_id);
+      expect(r.body.draft.body).toContain("Area looks small for this bill");
+      expect(r.body.draft.body).toMatch(/Prepared by: _+/);
+      expect(r.body.draft.body).not.toMatch(/fraud|scam|corrupt/i);
+    } finally {
+      await db.flag_decision.deleteMany({ where: { flag_type: "overbilled", work_order_id: flag.work_order_id } });
+    }
+  });
+  it("accepts a written draft only if it names every job and accuses no one", async () => {
+    const { acceptable } = await import("../src/modules/flags");
+    expect(acceptable("Please explain WO25-00001 and WO25-00002.", ["WO25-00001", "WO25-00002"])).toBe(true);
+    expect(acceptable("Please explain WO25-00001.", ["WO25-00001", "WO25-00002"])).toBe(false);
+    expect(acceptable("WO25-00001 looks like fraud.", ["WO25-00001"])).toBe(false);
+    expect(acceptable("WO25-00001: a corrupted file is not an accusation, but the word is still refused.", ["WO25-00001"])).toBe(false);
+  });
+});
