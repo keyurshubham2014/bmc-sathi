@@ -145,6 +145,13 @@ describe("scorecards", () => {
     expect(types).not.toContain("Broken paver blocks");
     for (const t of s.unreachable_targets) expect(t.sla_hours).toBeLessThan(t.typical_hours);
   });
+  it("opens the jobs behind the fair speed figure", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    const fair = await api().get("/api/v1/contractors/CT03/work-orders?filter=fair_chance&limit=1").set(as("citizen"));
+    expect(fair.body.total).toBe(s.measures.speed_fair.n);
+    const late = await api().get("/api/v1/contractors/CT03/work-orders?filter=had_time&limit=1").set(as("citizen"));
+    expect(late.body.total).toBe(Math.round(s.measures.speed_fair.n * (1 - s.measures.speed_fair.observed)));
+  });
   it("shows too few jobs, not a band, for a small ward", async () => {
     const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
     expect(s.measures.speed_fair.band).toBe("too_few");
