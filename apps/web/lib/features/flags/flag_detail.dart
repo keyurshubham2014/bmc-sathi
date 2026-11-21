@@ -176,6 +176,8 @@ class _Body extends ConsumerWidget {
       if (!watch && (f['decision'] == 'confirmed' || f['decision'] == 'needs_explanation')) ...[
         const SizedBox(height: 10),
         _Draft(
+          // A new decision means the old draft no longer matches the record.
+          key: ValueKey('${f['decision']} ${f['decided_at']}'),
           type == 'dlp'
               ? {'kind': 'dlp', 'road_id': w['road_id'] ?? f['road_id']}
               : {'kind': 'billing', 'contractor_id': w['contractor_id'] ?? f['contractor_id'], 'ward_code': w['ward_code'] ?? f['ward_code']},
@@ -262,7 +264,7 @@ class _Body extends ConsumerWidget {
 /// "Draft a letter": one draft for every decided flag in this flag's group, shown as text to copy.
 /// Claude writes the words when it can; the API falls back to a fixed English template.
 class _Draft extends ConsumerStatefulWidget {
-  const _Draft(this.group);
+  const _Draft(this.group, {super.key});
   final Map<String, dynamic> group;
   @override
   ConsumerState<_Draft> createState() => _DraftState();

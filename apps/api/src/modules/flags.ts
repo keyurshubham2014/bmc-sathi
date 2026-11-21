@@ -92,9 +92,12 @@ const MAX_JOBS = 60;
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const day = (d: Date) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 
-/** A written draft is used only if it names every job and accuses no one; otherwise the template is. */
-export const acceptable = (body: string, ids: string[]) =>
-  ids.every((id) => body.includes(id)) && !/\b(fraud|scam|corrupt|theft|criminal)/i.test(body);
+/** A written draft is used only if it names every job, accuses no one (title included) and is in the
+ *  language asked for; otherwise the template is. */
+export const acceptable = (d: { title: string; body: string }, ids: string[], lang: string) =>
+  ids.every((id) => d.body.includes(id))
+  && !/\b(fraud|scam|corrupt|cheat|theft|steal|stole|criminal)/i.test(`${d.title}\n${d.body}`)
+  && (lang !== "mr" || /[\u0900-\u097F]/.test(d.body));
 
 function reason(r: any): string {
   const e = r.evidence;
@@ -107,7 +110,7 @@ const WRITER = `You draft a short official letter for a Mumbai ward office from 
 For kind "dlp": address the Roads Department; ask it to identify the contractor liable under the defect liability period for the road and to recover the listed amounts. Do not name a liable contractor: the records do not say who it is.
 For kind "billing": address the contractor named in the facts; ask for a written explanation of each listed job within 7 days. A flag is a reason to ask, not a finding.
 List every job on its own line with its work order id exactly as given, its date, what was billed, the amount in question and the reason from the facts. Include the officer's note where there is one.
-Do not accuse anyone, do not use words such as fraud, scam, corrupt, theft or criminal, and add no fact that is not in the JSON. Do not write a total, a heading line about drafts, or a signature: those are added afterwards.
+Do not accuse anyone, do not use words such as fraud, scam, corrupt, cheat, theft, steal or criminal, and add no fact that is not in the JSON. Do not write a total, a heading line about drafts, or a signature: those are added afterwards.
 Plain sentences, under 250 words besides the job list. Write in the language named in "lang" ("en" English, "mr" Marathi in Devanagari), keeping ids, names and amounts as given.`;
 const Written = z.object({ title: z.string(), body: z.string() });
 
@@ -167,14 +170,12 @@ flags.post("/draft", async (req, res) => {
   const out = { work_order_ids: ids, total_amount: total, left_out };
 
   if (!b.plain && config.anthropicKey) {
-    rateLimit(req.user.user_id);
     try {
-      // shortcut: askJson has no timeout of its own, so the wait is capped here; give it a client timeout if drafts are ever queued.
-      const written = await Promise.race([
-        askJson(SONNET, WRITER, JSON.stringify({ kind: b.kind, lang: b.lang, to, subject, jobs }), Written),
-        new Promise<never>((_, no) => setTimeout(() => no(new Error("timed out")), 20_000)),
-      ]);
-      if (acceptable(written.body, ids))
+      // Over the rate limit also falls through to the template: the officer always gets a draft.
+      rateLimit(req.user.user_id);
+      // One attempt, cut off at 20 seconds, so a slow call is not retried and billed after the template has gone out.
+      const written = await askJson(SONNET, WRITER, JSON.stringify({ kind: b.kind, lang: b.lang, to, subject, jobs }), Written, { timeout: 20_000, maxRetries: 0 });
+      if (acceptable(written, ids, b.lang))
         return res.json({ draft: { title: written.title, body: wrap(written.body) }, source: "claude", lang: b.lang, ...out });
     } catch { /* fall through to the template: the officer always gets a draft */ }
   }

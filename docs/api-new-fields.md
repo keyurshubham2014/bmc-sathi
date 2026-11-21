@@ -148,7 +148,6 @@ Response:
 | 409 `conflict` | No decided flags in the group yet |
 | 403 | A citizen, or an officer outside their ward |
 | 404 | Unknown road or contractor |
-| 429 | More than 10 Claude drafts or Ask questions a minute for this user |
 
 Screen rules:
 
@@ -156,7 +155,7 @@ Screen rules:
 - Show `body` as plain text with a copy button. Line breaks are `\n`.
 - When `source` is `template` and Marathi was asked for, `lang` comes back `en`: say the Marathi version is unavailable just now.
 - When `left_out` is above 0, the body already says how many smaller jobs are not listed.
-- Calls can take up to 20 seconds before the template is returned; show progress.
+- Calls can take up to 20 seconds before the template is returned; show progress. Over the rate limit (10 Claude drafts or Ask questions a minute) the template is returned at once.
 - The Claude path was tried once in the running app (a DLP draft for RD0220, 21 Nov 2026) and returned a draft that passed the check.
 
 ## 5. Settings: `GET` and `PUT /settings`

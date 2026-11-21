@@ -179,6 +179,8 @@ describe("scorecards", () => {
   it("counts late jobs by what happened to the clock", async () => {
     const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
     expect(s.late).toEqual({ expired_before_assignment: 101, too_little_time_left: 69, had_time: 9 });
+    const [{ n }] = await db.$queryRaw<any[]>`SELECT COUNT(*)::int AS n FROM v_work_order_delay WHERE contractor_id = 'CT03' AND sla_met IS FALSE`;
+    expect(s.late.expired_before_assignment + s.late.too_little_time_left + s.late.had_time).toBe(n);
     const one = await api().get("/api/v1/contractors/CT03/work-orders?filter=too_little_time_left&limit=1").set(as("citizen"));
     expect(one.body.total).toBe(s.late.too_little_time_left);
   });
@@ -435,9 +437,17 @@ describe("action pack", () => {
   });
   it("accepts a written draft only if it names every job and accuses no one", async () => {
     const { acceptable } = await import("../src/modules/flags");
-    expect(acceptable("Please explain WO25-00001 and WO25-00002.", ["WO25-00001", "WO25-00002"])).toBe(true);
-    expect(acceptable("Please explain WO25-00001.", ["WO25-00001", "WO25-00002"])).toBe(false);
-    expect(acceptable("WO25-00001 looks like fraud.", ["WO25-00001"])).toBe(false);
-    expect(acceptable("WO25-00001: a corrupted file is not an accusation, but the word is still refused.", ["WO25-00001"])).toBe(false);
+    const d = (body: string, title = "Request for explanation") => ({ title, body });
+    expect(acceptable(d("Please explain WO25-00001 and WO25-00002."), ["WO25-00001", "WO25-00002"], "en")).toBe(true);
+    expect(acceptable(d("Please explain WO25-00001."), ["WO25-00001", "WO25-00002"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001 looks like fraud."), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001: a corrupted file is not an accusation, but the word is still refused."), ["WO25-00001"], "en")).toBe(false);
+    // The title is checked too, and so are the other words the product rules ban.
+    expect(acceptable(d("Please explain WO25-00001.", "Fraud notice"), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001 may be a cheat."), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("Money was stolen on WO25-00001? No: stealing is not in the facts."), ["WO25-00001"], "en")).toBe(false);
+    // A Marathi draft must actually be in Devanagari, or the English template is used and labelled.
+    expect(acceptable(d("Please explain WO25-00001."), ["WO25-00001"], "mr")).toBe(false);
+    expect(acceptable(d("कृपया WO25-00001 बद्दल लेखी खुलासा द्या."), ["WO25-00001"], "mr")).toBe(true);
   });
 });
