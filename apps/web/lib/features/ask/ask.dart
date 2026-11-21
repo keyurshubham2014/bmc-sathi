@@ -109,7 +109,7 @@ class _AskState extends ConsumerState<_AskPanel> {
               label: Text(id),
               onPressed: () {
                 final router = GoRouter.of(context);
-                Navigator.of(context).pop();
+                closeDetail(context);
                 router.go('/trail/${id.startsWith('WO') ? 'work-order' : 'complaint'}/$id');
               },
             ),

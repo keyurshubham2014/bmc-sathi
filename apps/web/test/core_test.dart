@@ -26,6 +26,13 @@ void main() {
     expect(money(134328183), '₹13.43 cr');
     expect(money(-250000), '-₹2.5 L');
     expect(money(null), '–');
+    expect(money(13000000), '₹1.30 cr');
+    expect(money(6320000), '₹63.2 L');
+    expect(money(5300000), '₹53.0 L');
+    expect(money(64531), '₹64,531');
+    expect(money(99999), '₹99,999');
+    expect(money(9999999), '₹1.00 cr');
+    expect(rupees(102000), '₹1,02,000');
   });
 
   test('every English string has a Marathi one', () {

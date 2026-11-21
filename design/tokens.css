@@ -1,0 +1,40 @@
+/* BMC Sathi · Roads — "Works" design tokens (light). Taken from the approved screens. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap');
+:root{
+  /* neutrals */
+  --ground:#E6E7EA;        /* page behind the app shell */
+  --shell:#F6F6F7;         /* app frame, sidebar */
+  --panel:#FFFFFF;         /* section panels, sub-cards */
+  --inset:#F3F4F5;         /* grey cards, list rows */
+  --line:#E4E6E9;          /* borders, dividers */
+  --ink:#15181B;           /* titles, figures */
+  --text-2:#565C65;        /* body secondary */
+  --text-3:#676D75;        /* labels, icons */
+  /* accent teal: selection, primary actions, neutral data bars */
+  --teal:#0E6F66; --teal-dark:#0A5750; --teal-tint:#E2F1EE;
+  /* amber: unreviewed flag or watch ONLY */
+  --amber-text:#92400E; --amber-icon:#B45309; --amber-fill:#FEF3C7; --amber-line:#F1D58A;
+  /* red: overspend or confirmed problem ONLY */
+  --red:#B42318; --red-hatch:#FBD5D0; --red-tint:#FDECEA;
+  /* map scale: spend as share of budget */
+  --map-1:#CFE6E1; /* under 80% */ --map-2:#6DB0A7; /* 80-89% */ --map-3:#0E6F66; /* 90-99% */
+  --map-4:#FBD5D0; /* 100-110%, + diagonal hatch */ --map-5:#F7BDB6; /* over 110%, + cross hatch */
+  /* shape */
+  --r-shell:22px; --r-panel:16px; --r-card:12px; --r-control:10px; --r-pill:999px;
+  --shadow-panel:0 1px 2px rgba(20,24,28,.03);
+  --shadow-shell:0 12px 32px -12px rgba(20,24,28,.12);
+  --focus:0 0 0 2px #fff, 0 0 0 4px var(--teal);
+  /* type */
+  --font:'Geist','Noto Sans Devanagari',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --fs-caps:11px;   /* tiny caps labels, letter-spacing .06em, weight 500 */
+  --fs-sub:12px; --fs-body:13px; --fs-nav:14px; --fs-card-title:15px; --fs-page-title:16px;
+  --fs-section:18px; --fs-figure:28px; /* headline numerals, weight 600, letter-spacing -.02em */
+  /* spacing steps */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  /* layout */
+  --sidebar-w:232px; --detail-w:440px; --control-h:34px; --input-h:44px;
+}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-variant-numeric:tabular-nums}
+/* hatches (colour never carries meaning alone) */
+.hatch-rest{background:repeating-linear-gradient(135deg,#E9EBEE 0 4px,#F6F6F7 4px 8px)}
+.hatch-over{background:repeating-linear-gradient(135deg,var(--red) 0 4px,var(--red-hatch) 4px 8px)}
