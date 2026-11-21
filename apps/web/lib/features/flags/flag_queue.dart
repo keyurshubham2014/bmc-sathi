@@ -112,6 +112,7 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
     final watch = tier == 'watch';
     final query = (type: type, tier: tier, decision: null, ward: ward);
     final summary = ref.watch(flagSummaryProvider(ward)).value ?? const [];
+    final phone = isPhone(context);
 
     num agg(bool Function(Map<String, dynamic>) where, String field) => summary.where(where).fold<num>(0, (a, s) => a + (s[field] as num));
     num tabOpen(int i) => agg((s) => s['flag_type'] == flagTabs[i].$2 && s['tier'] == flagTabs[i].$3 && s['decision'] == 'open', 'count');
@@ -236,14 +237,50 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
       return [for (final (j, c) in cols.indexed) (c, cells[j])];
     }
 
+    // Phone: one card per flag instead of table columns.
+    Widget phoneRow(Map<String, dynamic> f) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (wardCol) ...[Text('${f['ward_code']}', style: Tok.body.copyWith(fontWeight: FontWeight.w600)), const SizedBox(width: 8)],
+              Expanded(
+                child: Text('${f['work_order_id']}', style: Tok.body.copyWith(color: Tok.tealDark, fontWeight: FontWeight.w600)),
+              ),
+              Text(fmt.rupees(f['amount_at_stake']), style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text('${f['road_name']}', style: Tok.body.copyWith(fontWeight: FontWeight.w500)),
+          contractorText('${f['contractor_name']}', style: Tok.sub),
+          const SizedBox(height: 4),
+          Text(flagReason(t, f), style: reasonStyle),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              DecisionChip(watch ? 'watch' : '${f['decision']}'),
+              if (f['decided_at'] != null) ...[
+                const SizedBox(width: 8),
+                Flexible(child: Text(t('flags.decidedOn', {'when': fmt.date(f['decided_at'])}), style: Tok.sub)),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+
     Widget table(List<Map<String, dynamic>> rows) {
       final sel = rows.indexWhere((f) => f['work_order_id'] == widget.id);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          WorksTable(columns: cols, rows: const []), // header only; rows below carry the second reason line
-          const SizedBox(height: 4),
+          if (!phone) ...[
+            WorksTable(columns: cols, rows: const []), // header only; rows below carry the second reason line
+            const SizedBox(height: 4),
+          ],
           for (final (i, f) in rows.indexed)
             Pressable(
               onTap: () {
@@ -262,7 +299,7 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
                 ),
                 child: DefaultTextStyle.merge(
                   style: Tok.body,
-                  child: Column(
+                  child: phone ? phoneRow(f) : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final (c, w) in rowCells(f, i == sel)) cell(c, w)]),
@@ -307,59 +344,57 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
         final showDecided = !watch && ui.decision == 'open' && decided.isNotEmpty;
         final next = (tab + 1) % flagTabs.length;
         final sub = Tok.sub.copyWith(fontSize: 12.5, height: 18 / 12.5);
+        final contractorMenu = _Menu(
+          label: t('flags.filter.contractor'),
+          value: ui.contractor.isEmpty ? t('flags.filter.all') : ui.contractor,
+          options: [('', t('flags.filter.all')), for (final c in contractors) (c, c)],
+          onSelected: (v) => uiCtl.upd(contractor: v),
+        );
+        final decisionMenu = _Menu(
+          label: t('flags.filter.decision'),
+          value: watch ? t('flags.filter.notUsed') : t('flags.filter.${ui.decision}'),
+          options: watch
+              ? null
+              : [
+                  for (final k in ['open', 'decided', 'all']) (k, t('flags.filter.$k')),
+                ],
+          onSelected: (v) => uiCtl.upd(decision: v),
+        );
+        final searchField = SizedBox(
+          width: phone ? double.infinity : 230,
+          child: TextField(
+            controller: _search,
+            onChanged: (v) => uiCtl.upd(search: v),
+            style: Tok.body,
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: Tok.panel,
+              hintText: t('flags.search'),
+              hintStyle: Tok.body.copyWith(color: Tok.text3),
+              prefixIcon: const Icon(Ico.search, size: 15, color: Tok.text3),
+              prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              constraints: const BoxConstraints.tightFor(height: 34),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(Tok.rControl),
+                borderSide: const BorderSide(color: Tok.line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(Tok.rControl),
+                borderSide: const BorderSide(color: Tok.teal, width: 2),
+              ),
+            ),
+          ),
+        );
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                _Menu(
-                  label: t('flags.filter.contractor'),
-                  value: ui.contractor.isEmpty ? t('flags.filter.all') : ui.contractor,
-                  options: [('', t('flags.filter.all')), for (final c in contractors) (c, c)],
-                  onSelected: (v) => uiCtl.upd(contractor: v),
-                ),
-                const SizedBox(width: 8),
-                _Menu(
-                  label: t('flags.filter.decision'),
-                  value: watch ? t('flags.filter.notUsed') : t('flags.filter.${ui.decision}'),
-                  options: watch
-                      ? null
-                      : [
-                          for (final k in ['open', 'decided', 'all']) (k, t('flags.filter.$k')),
-                        ],
-                  onSelected: (v) => uiCtl.upd(decision: v),
-                ),
-                const Spacer(),
-                SizedBox(
-                  width: 230,
-                  child: TextField(
-                    controller: _search,
-                    onChanged: (v) => uiCtl.upd(search: v),
-                    style: Tok.body,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: true,
-                      fillColor: Tok.panel,
-                      hintText: t('flags.search'),
-                      hintStyle: Tok.body.copyWith(color: Tok.text3),
-                      prefixIcon: const Icon(Ico.search, size: 15, color: Tok.text3),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      constraints: const BoxConstraints.tightFor(height: 34),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(Tok.rControl),
-                        borderSide: const BorderSide(color: Tok.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(Tok.rControl),
-                        borderSide: const BorderSide(color: Tok.teal, width: 2),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            if (phone)
+              Wrap(spacing: 8, runSpacing: 8, children: [contractorMenu, decisionMenu, searchField])
+            else
+              Row(children: [contractorMenu, const SizedBox(width: 8), decisionMenu, const Spacer(), searchField]),
             const SizedBox(height: 12),
             if (shown.isEmpty) EmptyState(t('flags.empty')) else table(shown),
             if (showDecided) ...[
@@ -463,10 +498,11 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 12,
                 children: [
                   Text(t('flags.foot.count', {'open': open.length, 'decided': decided.length}), style: sub),
-                  const Spacer(),
                   Text(t('flags.foot.sort'), style: sub),
                 ],
               ),
@@ -476,6 +512,11 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
       },
     );
 
+    final tabs = SegmentedTabs<int>(
+      items: [for (final (i, x) in flagTabs.indexed) TabItem(i, t('flags.tab.${x.$1}'), count: tabOpen(i).toInt())],
+      value: tab,
+      onChanged: switchTab,
+    );
     final queue = Panel(
       padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
       child: Column(
@@ -483,13 +524,11 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
         children: [
           Row(
             children: [
-              SegmentedTabs<int>(
-                items: [for (final (i, x) in flagTabs.indexed) TabItem(i, t('flags.tab.${x.$1}'), count: tabOpen(i).toInt())],
-                value: tab,
-                onChanged: switchTab,
-              ),
-              const Spacer(),
-              if (!panelOpen && !watch) ...[
+              // Phone: the tabs scroll sideways; the open count and amount are in the stats panel above.
+              if (phone)
+                Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: tabs))
+              else ...[tabs, const Spacer()],
+              if (!phone && !panelOpen && !watch) ...[
                 Text.rich(
                   TextSpan(
                     style: Tok.body.copyWith(color: Tok.text2),
@@ -521,10 +560,12 @@ class _QueueState extends ConsumerState<FlagQueueScreen> {
       ),
     );
 
-    // shortcut: always the 1440 desktop layout (queue + 440 px panel); add a narrow single-column layout if phones matter.
+    // Phone: cards instead of the table, and the flag opens over the queue (DetailPanelLayout).
     return SetTopBar(
       title: t('flags.title'),
       titleSuffix: ward == null ? null : t('ward.label', {'code': ward}),
+      // Phone: the flag covers the queue, so the top bar (and Android back) leads back to it.
+      onBack: phone && widget.id != null ? close : null,
       child: DetailPanelLayout(
         main: PageBody(children: [stats, queue]),
         panel: widget.id == null ? null : FlagDetail(type, widget.id!, watch: watch, onClose: close, key: ValueKey((type, widget.id))),

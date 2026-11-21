@@ -66,7 +66,7 @@ class _SearchState extends ConsumerState<TrailSearchScreen> {
           const SizedBox(height: Tok.s4),
           TextField(
             controller: _box,
-            autofocus: true,
+            autofocus: !isPhone(context), // phone: don't open the keyboard over the page on arrival
             style: Tok.emph.copyWith(fontSize: 15),
             textInputAction: TextInputAction.search,
             onSubmitted: _go,
@@ -90,7 +90,10 @@ class _SearchState extends ConsumerState<TrailSearchScreen> {
           Text(t('trail.hint'), style: Tok.sub),
           if (data != null && total > 0) ...[
             const SizedBox(height: Tok.s4),
-            SegmentedTabs<String>(
+            // Phone: four tabs scroll sideways.
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedTabs<String>(
               value: _tab,
               onChanged: (v) => setState(() => _tab = v),
               items: [
@@ -99,6 +102,7 @@ class _SearchState extends ConsumerState<TrailSearchScreen> {
                 if (jobs.isNotEmpty) TabItem('work_orders', t('trail.group.workOrders'), count: jobs.length),
                 if (issues.isNotEmpty) TabItem('issues', t('trail.group.issues'), count: issues.length),
               ],
+            ),
             ),
           ],
         ],
@@ -158,10 +162,11 @@ class _SearchState extends ConsumerState<TrailSearchScreen> {
                 const SizedBox(height: Tok.s2),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Row(
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 12,
                     children: [
                       Text(t('trail.matches', {'n': total}), style: Tok.sub.copyWith(color: Tok.ink, fontWeight: FontWeight.w500)),
-                      const Spacer(),
                       Text(t('trail.groupedNote'), style: Tok.sub),
                     ],
                   ),
@@ -176,14 +181,19 @@ class _SearchState extends ConsumerState<TrailSearchScreen> {
     return SetTopBar(
       title: t('nav.trail'),
       child: SingleChildScrollView(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [searchPanel, const SizedBox(height: Tok.gapPanels), results])),
-            const SizedBox(width: Tok.gapPanels),
-            const SizedBox(width: 374, child: _Explainer()),
-          ],
-        ),
+        child: isPhone(context)
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [searchPanel, const SizedBox(height: Tok.gapPanels), results, const SizedBox(height: Tok.gapPanels), const _Explainer()],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [searchPanel, const SizedBox(height: Tok.gapPanels), results])),
+                  const SizedBox(width: Tok.gapPanels),
+                  const SizedBox(width: 374, child: _Explainer()),
+                ],
+              ),
       ),
     );
   }
@@ -409,6 +419,7 @@ class _TrailBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(stringsProvider);
+    final phone = isPhone(context);
     Map<String, dynamic>? m(String k) => d[k] == null ? null : Map<String, dynamic>.from(d[k]);
     final issue = m('issue'), w = m('work_order'), road = m('road'), plan = m('plan');
     final complaints = List<Map<String, dynamic>>.from(d['complaints']);
@@ -516,7 +527,9 @@ class _TrailBody extends ConsumerWidget {
     );
 
     // ---- Stage cards
-    Widget fields(List<(String, String)> items, {int perRow = 4}) => Column(
+    Widget fields(List<(String, String)> items, {int perRow = 4}) {
+      if (phone) perRow = 2;
+      return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var r = 0; r < items.length; r += perRow) ...[
@@ -531,6 +544,7 @@ class _TrailBody extends ConsumerWidget {
         ],
       ],
     );
+    }
 
     final complaintsStage = complaints.isEmpty
         ? _Stage.missing(eyebrow: t('trail.stage.complaints'), title: t('wo.noComplaint'))
@@ -603,6 +617,72 @@ class _TrailBody extends ConsumerWidget {
       final cost = (w['cost_inr'] as num).toDouble(), exp = (w['expected_cost'] as num?)?.toDouble() ?? 0;
       final above = cost > exp;
       final diff = (cost - exp).abs();
+      final costCol = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(t('trail.costAgainst'), style: Tok.sub),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(fmt.rupees(cost), style: Tok.figure.copyWith(fontSize: 22)),
+              const SizedBox(width: 8),
+              Flexible(child: Text(t('trail.againstExpected', {'amount': fmt.rupees(exp)}), style: Tok.body.copyWith(color: Tok.text2))),
+              const Spacer(),
+              Text(_x(w['cost_ratio']), style: Tok.emph.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(Tok.rPill),
+            child: SizedBox(
+              height: 8,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(flex: (above ? exp : cost).round().clamp(1, 1 << 31), child: const ColoredBox(color: Tok.teal)),
+                  const SizedBox(width: 2),
+                  if (diff > 0)
+                    Expanded(
+                      flex: diff.round().clamp(1, 1 << 31),
+                      child: above ? const Hatch(stripe: Tok.strongLine, background: Tok.panel, width: 2, gap: 2.5) : const Hatch.rest(),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  above
+                      ? t('trail.legendAbove', {'amount': fmt.rupees(exp)})
+                      : t('trail.legendBelow', {'amount': fmt.rupees(cost), 'exp': fmt.rupees(exp)}),
+                  style: Tok.sub.copyWith(fontSize: 11.5),
+                ),
+              ),
+              Text(
+                t(above ? 'trail.aboveExpected' : 'trail.belowExpected', {'amount': fmt.rupees(diff)}),
+                style: Tok.sub.copyWith(fontSize: 11.5, color: Tok.ink, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ],
+      );
+      final slaCol = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t('trail.slaLabel'), style: Tok.sub),
+          const SizedBox(height: 6),
+          if (slaMet != null) _slaPill(t(slaMet ? 'trail.slaMet' : 'trail.slaMissed'), slaMet),
+          if (taken != null && w['sla_hours'] != null) ...[
+            const SizedBox(height: 6),
+            Text(t('trail.took', {'h': taken.$2, 'limit': w['sla_hours']}), style: Tok.sub),
+          ],
+        ],
+      );
       woStage = _Stage(
         titleWidget: Text.rich(
           TextSpan(
@@ -625,85 +705,19 @@ class _TrailBody extends ConsumerWidget {
             ], perRow: 3),
           ),
           SubCard(
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
+            // Phone: cost above SLA instead of side by side.
+            child: phone
+                ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [costCol, const Divider(height: 28, color: Tok.line), slaCol])
+                : IntrinsicHeight(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(t('trail.costAgainst'), style: Tok.sub),
-                        const SizedBox(height: 4),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(fmt.rupees(cost), style: Tok.figure.copyWith(fontSize: 22)),
-                            const SizedBox(width: 8),
-                            Text(t('trail.againstExpected', {'amount': fmt.rupees(exp)}), style: Tok.body.copyWith(color: Tok.text2)),
-                            const Spacer(),
-                            Text(_x(w['cost_ratio']), style: Tok.emph.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(Tok.rPill),
-                          child: SizedBox(
-                            height: 8,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(flex: (above ? exp : cost).round().clamp(1, 1 << 31), child: const ColoredBox(color: Tok.teal)),
-                                const SizedBox(width: 2),
-                                if (diff > 0)
-                                  Expanded(
-                                    flex: diff.round().clamp(1, 1 << 31),
-                                    child: above ? const Hatch(stripe: Tok.strongLine, background: Tok.panel, width: 2, gap: 2.5) : const Hatch.rest(),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                above
-                                    ? t('trail.legendAbove', {'amount': fmt.rupees(exp)})
-                                    : t('trail.legendBelow', {'amount': fmt.rupees(cost), 'exp': fmt.rupees(exp)}),
-                                style: Tok.sub.copyWith(fontSize: 11.5),
-                              ),
-                            ),
-                            Text(
-                              t(above ? 'trail.aboveExpected' : 'trail.belowExpected', {'amount': fmt.rupees(diff)}),
-                              style: Tok.sub.copyWith(fontSize: 11.5, color: Tok.ink, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
+                        Expanded(child: costCol),
+                        const VerticalDivider(width: 32, color: Tok.line),
+                        SizedBox(width: 180, child: slaCol),
                       ],
                     ),
                   ),
-                  const VerticalDivider(width: 32, color: Tok.line),
-                  SizedBox(
-                    width: 180,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(t('trail.slaLabel'), style: Tok.sub),
-                        const SizedBox(height: 6),
-                        if (slaMet != null) _slaPill(t(slaMet ? 'trail.slaMet' : 'trail.slaMissed'), slaMet),
-                        if (taken != null && w['sla_hours'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(t('trail.took', {'h': taken.$2, 'limit': w['sla_hours']}), style: Tok.sub),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
           if ('${w['engineer_remark'] ?? ''}'.isNotEmpty)
             Padding(
@@ -912,14 +926,16 @@ class _TrailBody extends ConsumerWidget {
     return PageBody(
       children: [
         header,
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: stagePanel),
-            const SizedBox(width: Tok.gapPanels),
-            SizedBox(width: 384, child: glancePanel),
-          ],
-        ),
+        if (phone) ...[stagePanel, glancePanel] // phone: the glance panel follows the stages
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: stagePanel),
+              const SizedBox(width: Tok.gapPanels),
+              SizedBox(width: 384, child: glancePanel),
+            ],
+          ),
       ],
     );
   }
@@ -995,7 +1011,8 @@ class _ComplaintCard extends ConsumerWidget {
               spacing: 12,
               runSpacing: 6,
               children: [
-                Row(mainAxisSize: MainAxisSize.min, children: [
+                // Wrap: on a phone the date and upvotes drop to a second line.
+                Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: 4, children: [
                 Text('${k['complaint_id']}', style: Tok.emph.copyWith(color: Tok.tealDark, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
                 if (k['language'] != null) ...[Pill('${k['language']}'), const SizedBox(width: 8)],
@@ -1043,6 +1060,16 @@ class _FlagRow extends ConsumerWidget {
       'overbilled' => t('trail.ratioExpected', {'x': _x(w['cost_ratio'])}),
       _ => null,
     };
+    final icon = Icon(watch ? Ico.eye : Ico.flag, size: 15, color: watch ? Tok.text3 : Tok.amberIcon);
+    final title = Text(
+      t('flags.tab.${watch ? 'watch' : f['flag_type']}'),
+      style: Tok.body.copyWith(fontWeight: FontWeight.w600, color: watch ? Tok.ink : Tok.amberText),
+    );
+    final amount = Text(fmt.rupees(f['amount_at_stake']), style: Tok.body.copyWith(fontWeight: FontWeight.w600));
+    final chip = DecisionChip(watch ? 'watch' : '${f['decision'] ?? 'open'}');
+    final openBtn = canOpen && !watch
+        ? AppButton.quiet(t('trail.openFlag'), onPressed: () => context.go('/flags/${f['flag_type']}/${w['work_order_id']}'))
+        : null;
     return Container(
       margin: const EdgeInsets.only(top: 6),
       padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
@@ -1051,7 +1078,18 @@ class _FlagRow extends ConsumerWidget {
         borderRadius: BorderRadius.circular(Tok.rCard),
         border: Border.all(color: watch ? Tok.line : Tok.amberLine),
       ),
-      child: Row(
+      // Phone: type and amount, then the evidence, then decision and link, on three lines.
+      child: isPhone(context)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [icon, const SizedBox(width: 10), Expanded(child: title), amount]),
+                if (evidence != null) Padding(padding: const EdgeInsets.only(left: 25, top: 2), child: Text(evidence, style: Tok.sub)),
+                const SizedBox(height: 6),
+                Row(children: [const SizedBox(width: 25), chip, const Spacer(), ?openBtn]),
+              ],
+            )
+          : Row(
         children: [
           Icon(watch ? Ico.eye : Ico.flag, size: 15, color: watch ? Tok.text3 : Tok.amberIcon),
           const SizedBox(width: 10),

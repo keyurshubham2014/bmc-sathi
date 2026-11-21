@@ -128,9 +128,9 @@ class _CityState extends ConsumerState<CityScreen> {
               : box(Ico.alert, Tok.red, Tok.redTint, Tok.redLine, t('city.overBudget', {'n': over.length}), over.join(', ')),
           box(Ico.check, Tok.text2, Tok.inset, Tok.line, t('city.withinN', {'n': wards.length - over.length}), t('city.withinSub'), round: true),
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
+            // Wrap: on a phone the figures drop under the title.
+            Wrap(alignment: WrapAlignment.spaceBetween, spacing: 8, runSpacing: 2, children: [
               Text(t('city.barTitle'), style: small),
-              const Spacer(),
               Text.rich(TextSpan(style: small.copyWith(color: Tok.ink, fontWeight: FontWeight.w500), children: [
                 TextSpan(text: t('city.barLine', {'spent': fmt.money(spend), 'budget': fmt.money(budget)})),
                 TextSpan(text: fmt.pct(spend / budget), style: TextStyle(color: spend > budget ? Tok.red : Tok.teal, fontWeight: FontWeight.w600)),
@@ -240,8 +240,10 @@ class _CityState extends ConsumerState<CityScreen> {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Ico.alert, size: 13, color: Tok.red),
               const SizedBox(width: 4),
-              Text(t('city.overBy', {'amount': fmt.money((w['spend'] as num) - (w['budget'] as num))}),
-                  style: Tok.sub.copyWith(color: Tok.red)),
+              Flexible(
+                child: Text(t('city.overBy', {'amount': fmt.money((w['spend'] as num) - (w['budget'] as num))}),
+                    style: Tok.sub.copyWith(color: Tok.red)),
+              ),
             ]),
           ),
       ]),

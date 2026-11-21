@@ -477,16 +477,23 @@ class _DecisionState extends ConsumerState<_DecisionForm> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
       Caps(t('flags.form.title')),
       const SizedBox(height: 8),
-      Row(children: [
+      if (isPhone(context))
+        // Phone: one full-width choice per line, so no label is cut.
         for (final (i, d) in choices.indexed) ...[
-          if (i > 0) const SizedBox(width: 6),
-          // Widths fit the English labels in a 440 px panel, incl. the alert icon on a chosen "Confirmed".
-          Expanded(
-            flex: d == 'needs_explanation' ? 12 : 9,
-            child: _Choice(t('decision.$d'), red: d == 'confirmed', selected: _decision == d, onTap: _busy ? null : () => setState(() => _decision = d)),
-          ),
-        ],
-      ]),
+          if (i > 0) const SizedBox(height: 6),
+          _Choice(t('decision.$d'), red: d == 'confirmed', selected: _decision == d, onTap: _busy ? null : () => setState(() => _decision = d)),
+        ]
+      else
+        Row(children: [
+          for (final (i, d) in choices.indexed) ...[
+            if (i > 0) const SizedBox(width: 6),
+            // Widths fit the English labels in a 440 px panel, incl. the alert icon on a chosen "Confirmed".
+            Expanded(
+              flex: d == 'needs_explanation' ? 12 : 9,
+              child: _Choice(t('decision.$d'), red: d == 'confirmed', selected: _decision == d, onTap: _busy ? null : () => setState(() => _decision = d)),
+            ),
+          ],
+        ]),
       const SizedBox(height: 12),
       Row(children: [
         Text(t('flags.form.note'), style: Tok.body.copyWith(fontWeight: FontWeight.w500)),

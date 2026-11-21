@@ -111,7 +111,8 @@ class _MoneyTrail extends ConsumerWidget {
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           table,
           const SizedBox(height: Tok.gapPanels),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (isPhone(context)) ...[week, const SizedBox(height: Tok.gapPanels), summary]
+          else Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(flex: 58, child: week),
             const SizedBox(width: Tok.gapPanels),
             Expanded(flex: 42, child: summary),
@@ -259,31 +260,43 @@ class _MoneyInQuestion extends ConsumerWidget {
           link: t('ward.mt.reviewFlags', {'n': (session.canSeeFlags ? openFlagCount(ref, code) : null) ?? w['open_flags']}),
           onLink: session.canSeeFlags ? () => context.go('/flags?ward=${Uri.encodeComponent(code)}') : null),
     ];
+    final title = Padding(padding: const EdgeInsets.only(left: 2), child: Text(t('ward.mt.miq'), style: Tok.cardTitle));
+    final sub = Text(t('ward.mt.miqSub', {'amount': fmt.money(spend)}), overflow: TextOverflow.ellipsis, style: Tok.sub.copyWith(fontSize: 12.5));
+    final legend = [
+      SizedBox(
+        width: 26,
+        height: 6,
+        child: Row(children: [
+          Expanded(flex: 55, child: Container(decoration: BoxDecoration(color: Tok.teal, borderRadius: BorderRadius.circular(Tok.rPill)))),
+          Expanded(flex: 45, child: Container(decoration: BoxDecoration(color: Tok.hatchRest1, borderRadius: BorderRadius.circular(Tok.rPill)))),
+        ]),
+      ),
+      const SizedBox(width: 8),
+      Flexible(child: Text(t('ward.mt.miqLegend'), style: Tok.sub.copyWith(fontSize: 12.5))),
+    ];
     return Panel(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(
-          height: 28,
-          child: Row(children: [
-            Padding(padding: const EdgeInsets.only(left: 2), child: Text(t('ward.mt.miq'), style: Tok.cardTitle)),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Text(t('ward.mt.miqSub', {'amount': fmt.money(spend)}),
-                  overflow: TextOverflow.ellipsis, style: Tok.sub.copyWith(fontSize: 12.5)),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 26,
-              height: 6,
-              child: Row(children: [
-                Expanded(flex: 55, child: Container(decoration: BoxDecoration(color: Tok.teal, borderRadius: BorderRadius.circular(Tok.rPill)))),
-                Expanded(flex: 45, child: Container(decoration: BoxDecoration(color: Tok.hatchRest1, borderRadius: BorderRadius.circular(Tok.rPill)))),
-              ]),
-            ),
-            const SizedBox(width: 8),
-            Text(t('ward.mt.miqLegend'), style: Tok.sub.copyWith(fontSize: 12.5)),
-          ]),
-        ),
+        if (isPhone(context))
+          // Phone: title, sub-line and legend stacked; one row has no room for all three.
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            title,
+            const SizedBox(height: 2),
+            sub,
+            const SizedBox(height: 6),
+            Row(children: legend),
+          ])
+        else
+          SizedBox(
+            height: 28,
+            child: Row(children: [
+              title,
+              const SizedBox(width: 18),
+              Expanded(child: sub),
+              const SizedBox(width: 12),
+              ...legend,
+            ]),
+          ),
         const SizedBox(height: 10),
         LayoutBuilder(
           builder: (_, box) => box.maxWidth >= 560
@@ -345,7 +358,8 @@ class _MiqCard extends StatelessWidget {
               ? SizedBox(
                   height: 150,
                   child: Stack(clipBehavior: Clip.none, children: [
-                    Positioned(top: -10, right: -6, child: slab(1)),
+                    // Phone: a smaller slab keeps clear of the 152 px title column.
+                    Positioned(top: -10, right: -6, child: slab(isPhone(context) ? 0.8 : 1)),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 8, 10, 11),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -583,30 +597,36 @@ class _SpendTableState extends ConsumerState<_SpendTable> {
   Widget build(BuildContext context) {
     final t = ref.watch(stringsProvider);
     final key = (widget.code, _dim);
+    final phone = isPhone(context);
+    final title = Padding(padding: const EdgeInsets.only(left: 2), child: Text(t('ward.mt.whereMoney'), style: Tok.cardTitle));
+    final tabs = SegmentedTabs<String>(
+      items: [for (final d in _param.keys) TabItem(d, t('ward.dim.$d'))],
+      value: _dim,
+      onChanged: (d) => setState(() => _dim = d),
+    );
     return Panel(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: Padding(padding: const EdgeInsets.only(left: 2), child: Text(t('ward.mt.whereMoney'), style: Tok.cardTitle))),
-          Text(t('ward.mt.spendBy'), style: Tok.body.copyWith(color: Tok.text2)),
-          const SizedBox(width: 10),
-          SegmentedTabs<String>(
-            items: [for (final d in _param.keys) TabItem(d, t('ward.dim.$d'))],
-            value: _dim,
-            onChanged: (d) => setState(() => _dim = d),
-          ),
-        ]),
+        if (phone)
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [title, const SizedBox(height: 8), tabs])
+        else
+          Row(children: [
+            Expanded(child: title),
+            Text(t('ward.mt.spendBy'), style: Tok.body.copyWith(color: Tok.text2)),
+            const SizedBox(width: 10),
+            tabs,
+          ]),
         const SizedBox(height: 10),
         AsyncView(
           value: ref.watch(breakdownProvider(key)),
           onRetry: () => ref.invalidate(breakdownProvider(key)),
-          builder: (items) => items.isEmpty ? EmptyState(t('wo.empty')) : _table(t, items),
+          builder: (items) => items.isEmpty ? EmptyState(t('wo.empty')) : _table(t, items, phone),
         ),
       ]),
     );
   }
 
-  Widget _table(Strings t, List<Map<String, dynamic>> items) {
+  Widget _table(Strings t, List<Map<String, dynamic>> items, bool phone) {
     final contractor = _dim == 'contractor';
     final maxSpend = items.fold<num>(0, (m, i) => math.max(m, i['spend'] as num));
     final step = _niceStep(maxSpend / 3);
@@ -626,7 +646,7 @@ class _SpendTableState extends ConsumerState<_SpendTable> {
 
     Widget row({required Widget lead, required Widget bar, required Widget spent, required Widget count, Widget? trail}) => Row(children: [
           Expanded(flex: 5, child: lead),
-          Expanded(flex: 4, child: bar),
+          if (!phone) Expanded(flex: 4, child: bar), // phone: names need the room more than the bars
           SizedBox(width: _spentW, child: Align(alignment: Alignment.centerRight, child: spent)),
           SizedBox(width: _jobsW, child: Align(alignment: Alignment.centerRight, child: count)),
           SizedBox(width: _chevW, child: trail),
@@ -671,7 +691,7 @@ class _SpendTableState extends ConsumerState<_SpendTable> {
               ),
               child: row(
                 lead: Row(children: [
-                  if (contractor) ...[_Initials(label(i)), const SizedBox(width: 14)],
+                  if (contractor && !phone) ...[_Initials(label(i)), const SizedBox(width: 14)],
                   Expanded(child: _Name(label(i))),
                   const SizedBox(width: 12),
                 ]),

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { config } from "./config";
@@ -41,6 +42,11 @@ api.use("/intake", intake);
 api.use("/ask", ask);
 api.use("/trail", trail);
 app.use("/api/v1", api);
+
+// Production: serve the Flutter web build (copied to apps/api/public) from the same origin.
+const web = fileURLToPath(new URL("../public", import.meta.url));
+app.use(express.static(web));
+app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile("index.html", { root: web }));
 
 app.use((_req, _res, next) => next(new AppError("not_found", "No such route.")));
 

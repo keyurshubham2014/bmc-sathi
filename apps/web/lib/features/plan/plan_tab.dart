@@ -240,6 +240,8 @@ class _OverBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(stringsProvider);
+    final phone = isPhone(context);
+    final pill = Pill(t('plan.banner.pill', {'n': funded, 'total': total}), tone: Tone.error, icon: Ico.alert);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
       decoration: BoxDecoration(color: Tok.redTint, borderRadius: BorderRadius.circular(Tok.rPanel), border: Border.all(color: Tok.redLine)),
@@ -258,10 +260,10 @@ class _OverBanner extends ConsumerWidget {
               TextSpan(text: t('plan.banner.lead', {'amount': fmt.money(over)}), style: const TextStyle(color: Tok.red, fontWeight: FontWeight.w600)),
               TextSpan(text: ' ${t('plan.banner.rest')}'),
             ])),
+            if (phone) ...[const SizedBox(height: 8), pill],
           ]),
         ),
-        const SizedBox(width: Tok.s3),
-        Pill(t('plan.banner.pill', {'n': funded, 'total': total}), tone: Tone.error, icon: Ico.alert),
+        if (!phone) ...[const SizedBox(width: Tok.s3), pill],
       ]),
     );
   }
@@ -294,6 +296,28 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
           ]),
         );
 
+    final phone = isPhone(context);
+    final partsButton = AppButton.outlined(
+      _open ? t('plan.hideParts') : t('plan.scoreParts'),
+      trailingIcon: _open ? Ico.chevronUp : Ico.chevronDown,
+      onPressed: () => setState(() => _open = !_open),
+    );
+    // Phone: the risk score and the parts button move under the text instead of beside it.
+    final riskBox = SizedBox(
+      width: 136,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Text(t('plan.riskLabel'), style: Tok.body.copyWith(color: Tok.text2)),
+          const Spacer(),
+          Text.rich(TextSpan(children: [
+            TextSpan(text: '${risk.round()}', style: Tok.section),
+            TextSpan(text: ' ${t('plan.of', {'max': 100})}', style: Tok.body.copyWith(color: Tok.text2)),
+          ])),
+        ]),
+        const SizedBox(height: 6),
+        ProgressBar(risk / 100),
+      ]),
+    );
     final body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -329,24 +353,10 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
                   for (final r in reasons) Pill(r, tone: r == t('plan.reason.hospital') ? Tone.success : Tone.info),
                 ]),
               ],
+              if (phone) ...[const SizedBox(height: Tok.s2), riskBox],
             ]),
           ),
-          const SizedBox(width: Tok.s4),
-          SizedBox(
-            width: 136,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                Text(t('plan.riskLabel'), style: Tok.body.copyWith(color: Tok.text2)),
-                const Spacer(),
-                Text.rich(TextSpan(children: [
-                  TextSpan(text: '${risk.round()}', style: Tok.section),
-                  TextSpan(text: ' ${t('plan.of', {'max': 100})}', style: Tok.body.copyWith(color: Tok.text2)),
-                ])),
-              ]),
-              const SizedBox(height: 6),
-              ProgressBar(risk / 100),
-            ]),
-          ),
+          if (!phone) ...[const SizedBox(width: Tok.s4), riskBox],
         ]),
       ),
       SubCard(
@@ -369,14 +379,10 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
                     style: const TextStyle(color: Tok.text2),
                   ),
                 ),
+              if (phone) ...[const SizedBox(height: 8), Align(alignment: Alignment.centerLeft, child: partsButton)],
             ]),
           ),
-          const SizedBox(width: Tok.s3),
-          AppButton.outlined(
-            _open ? t('plan.hideParts') : t('plan.scoreParts'),
-            trailingIcon: _open ? Ico.chevronUp : Ico.chevronDown,
-            onPressed: () => setState(() => _open = !_open),
-          ),
+          if (!phone) ...[const SizedBox(width: Tok.s3), partsButton],
         ]),
       ),
       if (_open) ...[
