@@ -68,10 +68,13 @@ class SessionController extends Notifier<Session?> {
     final raw = ref.watch(prefsProvider).getString('session');
     if (raw == null) return null;
     try {
-      return Session.fromJson(jsonDecode(raw));
-    } catch (_) {
-      return null;
-    }
+      final s = Session.fromJson(jsonDecode(raw));
+      // Drop a token past its `exp` so a returning user lands on sign-in, not on a page of 401s.
+      final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(s.token.split('.')[1]))));
+      if (DateTime.now().millisecondsSinceEpoch ~/ 1000 < payload['exp']) return s;
+    } catch (_) {}
+    ref.read(prefsProvider).remove('session');
+    return null;
   }
 
   Future<void> signIn(String username, String password) async {

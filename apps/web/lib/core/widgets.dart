@@ -2222,6 +2222,8 @@ class ErrorState extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(stringsProvider);
     final e = asApiError(error);
+    // The 401 interceptor is already signing out, so show nothing instead of a Retry that would fail again.
+    if (e.status == 401) return const SizedBox.shrink();
     return Semantics(
       liveRegion: true,
       child: Container(
