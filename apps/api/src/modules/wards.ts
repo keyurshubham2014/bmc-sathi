@@ -35,9 +35,11 @@ wards.get("/:code/breakdown", async (req, res) => {
     WHERE ward_code = ${req.params.code} AND dimension = ${dimension} ORDER BY ${order}` });
 });
 
+const MISS_CAUSES = ["expired_before_assignment", "too_little_time_left", "had_time"] as const;
+
 /** The work orders behind any figure on a ward or contractor page. */
 export const workOrderQuery = z.object({
-  filter: z.enum(["all", "reopened", "dlp", "flagged", "sla_missed", "overbilled"]).default("all"),
+  filter: z.enum(["all", "reopened", "dlp", "flagged", "sla_missed", "overbilled", "fair_chance", "followed_up", ...MISS_CAUSES]).default("all"),
   contractor_id: z.string().optional(),
   method: z.string().optional(),
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -51,6 +53,10 @@ export async function listWorkOrders(scope: Prisma.Sql, q: z.infer<typeof workOr
   if (q.filter === "sla_missed") where.push(Prisma.sql`sla_met = false`);
   if (q.filter === "overbilled") where.push(Prisma.sql`cost_ratio > cfg('overbill_ratio')`);
   if (q.filter === "flagged") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_flag WHERE tier = 'flag')`);
+  if (q.filter === "followed_up") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_followup WHERE followup_work_order_id IS NOT NULL)`);
+  if (q.filter === "fair_chance") where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_work_order_delay WHERE fair_chance)`);
+  if ((MISS_CAUSES as readonly string[]).includes(q.filter))
+    where.push(Prisma.sql`work_order_id IN (SELECT work_order_id FROM v_work_order_delay WHERE miss_cause = ${q.filter})`);
   if (q.contractor_id) where.push(Prisma.sql`contractor_id = ${q.contractor_id}`);
   if (q.method) where.push(Prisma.sql`repair_method = ${q.method}`);
   if (q.week) where.push(Prisma.sql`date_trunc('week', COALESCE(completed_at, assigned_at))::date = ${q.week}::date`);
@@ -82,8 +88,11 @@ wards.get("/:code/plan", async (req, res) => {
     SELECT issue_id, rank, road_id, road_name, segment_no, road_type, category, severity, complaint_count, upvotes_total,
            days_open, accidents, hospital_entry_count, school_count, bus_route, near_hotspot_id, high_risk, risk_score,
            pts_severity, pts_access, pts_safety, pts_traffic, pts_flood, pts_demand, recommended_method,
-           recommended_reopen_rate, estimated_cost, alt_method, alt_cost, alt_reopen_rate, cumulative_cost, within_budget
+           recommended_reopen_rate, estimated_cost, alt_method, alt_cost, alt_reopen_rate, cumulative_cost, within_budget,
+           within_recovered, within_possible, road_jobs, road_spend
     FROM v_plan WHERE ward_code = ${req.params.code} ORDER BY rank`;
   const weights = await db.setting.findMany({ where: { key: { startsWith: "w_" } } });
-  res.json({ ward, items, weights: Object.fromEntries(weights.map((w) => [w.key, w.value])) });
+  // Totals only: what flagged money would fund. The flag rows themselves stay behind the flags routes.
+  const [recoverable] = await db.$queryRaw<any[]>`SELECT * FROM v_ward_recoverable WHERE ward_code = ${req.params.code}`;
+  res.json({ ward, recoverable, items, weights: Object.fromEntries(weights.map((w) => [w.key, w.value])) });
 });

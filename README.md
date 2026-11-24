@@ -171,13 +171,13 @@ flutter run -d web-server --web-port 5173 --web-hostname localhost \
 
    ![Flag queue with the double-billing evidence panel: two jobs on the same road, three days apart](docs/screenshots/flag-evidence.jpg)
 
-4. **Contractors**: three measures against similar jobs.
+4. **Contractors**: three measures against similar jobs. Speed counts the jobs that were assigned with enough time left, and shows what happened to the clock on the late ones.
 
-   ![Contractor scorecard](docs/screenshots/scorecard.jpg)
+   ![Contractor scorecard: on-time share when there was enough time left, late jobs by cause, and what re-opened fixes cost](docs/screenshots/scorecard.jpg)
 
-5. **Ward → Plan**: ranked open issues. Expand one to see how its risk score is made up.
+5. **Ward → Plan**: ranked open issues, with what the money in flags would fund if recovered. Expand an issue to see how its risk score is made up.
 
-   ![Next-rupee plan with a score breakdown](docs/screenshots/plan.jpg)
+   ![Next-rupee plan: money in flags for the ward, the budget line and the jobs already done on each road](docs/screenshots/plan.jpg)
 
 6. **Settings** (auditor): change a threshold or risk weight. Flags, scorecards and the plan update at once.
 

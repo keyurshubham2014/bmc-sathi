@@ -187,17 +187,47 @@ class ScorecardView extends ConsumerWidget {
     final ctx = t('scorecard.ctx', {'rain': s['heavy_rain_jobs'], 'low': s['low_lying_jobs']});
     final cost = Map<String, dynamic>.from(m['cost']);
     final flagged = (cost['flagged'] as num?) ?? 0;
+    final all = Map<String, dynamic>.from(m['speed']);
+    final fair = m['speed_fair'] == null ? null : Map<String, dynamic>.from(m['speed_fair']);
+    final wait = m['assign_wait'] == null ? null : Map<String, dynamic>.from(m['assign_wait']);
+    final late = s['late'] == null ? null : Map<String, dynamic>.from(s['late']);
+    final redo = s['redo'] == null ? null : Map<String, dynamic>.from(s['redo']);
+    final targets = List<Map<String, dynamic>>.from(s['unreachable_targets'] ?? const []);
+    String hours(num? h) => h == null ? '–' : t('scorecard.hours', {'n': h.round()});
+    Widget tap(String label, String filter, Widget child) => Pressable(onTap: () => open(label, filter), semanticLabel: label, child: child);
+    const go = Padding(padding: EdgeInsets.only(left: 6), child: Icon(Ico.chevronRight, size: 14, color: Tok.text3));
+    final allN = (all['n'] as num?) ?? 0, allObs = all['observed'] as num?;
     final cards = [
       _RateCard(
         measure: 'speed',
-        m: Map<String, dynamic>.from(m['speed']),
+        // The band rests on jobs that were assigned with enough time left; the all-jobs figure sits below.
+        m: fair ?? all,
         subject: subject,
         ctx: ctx,
         unit: t('scorecard.onTime'),
+        extra: fair == null ? null : t('scorecard.fairSub'),
         countLabel: t('scorecard.count.onTime'),
         countIcon: Ico.calendar,
         link: t('sc.seeLate'),
         onOpen: () => open(t('sc.seeLate'), 'sla_missed'),
+        more: [
+          if (fair != null)
+            _countBox(
+              Ico.receipt,
+              t('scorecard.allJobs'),
+              allObs == null ? '–' : t('scorecard.pctXofY', {'pct': fmt.pct(allObs), 'x': fmt.count((allObs * allN).round()), 'y': fmt.count(allN)}),
+            ),
+          // For a contractor the wait is context only: plain text, no band, no colour.
+          if (wait != null && !ward) ...[
+            _countBox(Ico.calendar, t('scorecard.waited'), hours(wait['observed'] as num?)),
+            Text(t('scorecard.waitedSimilar', {'n': hours(wait['expected'] as num?)}), style: Tok.sub),
+          ],
+          if (late != null) ...[
+            Text(t('scorecard.lateBy'), style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+            for (final k in const ['expired_before_assignment', 'too_little_time_left', 'had_time'])
+              tap(t('scorecard.late.$k'), k, _countBox(Ico.calendar, t('scorecard.late.$k'), fmt.count((late[k] as num?) ?? 0), trailing: go)),
+          ],
+        ],
       ),
       _RateCard(
         measure: 'durability',
@@ -210,6 +240,22 @@ class ScorecardView extends ConsumerWidget {
         countIcon: Ico.reopened,
         link: t('sc.seeReopened'),
         onOpen: () => open(t('sc.seeReopened'), 'reopened'),
+        more: [
+          if (redo != null && ((redo['reopened_jobs'] as num?) ?? 0) > 0) ...[
+            tap(t('scorecard.redoSpend'), 'reopened', _countBox(Ico.rupee, t('scorecard.redoSpend'), fmt.money(redo['reopened_spend'] as num?), trailing: go)),
+            tap(
+              t('scorecard.followed'),
+              'followed_up',
+              _countBox(
+                Ico.reopened,
+                t('scorecard.followed'),
+                t('scorecard.followedValue', {'n': fmt.count((redo['followed_up_jobs'] as num?) ?? 0), 'amount': fmt.money(redo['followup_spend'] as num?)}),
+                trailing: go,
+              ),
+            ),
+            if (((redo['followup_by_other'] as num?) ?? 0) > 0) Text(t('scorecard.followedOther', {'n': fmt.count(redo['followup_by_other'] as num)}), style: Tok.sub),
+          ],
+        ],
       ),
       _CostCard(
         m: cost,
@@ -218,19 +264,101 @@ class ScorecardView extends ConsumerWidget {
             ? () => open(t('sc.seeOver'), 'overbilled')
             : () => open(t('scorecard.seeN', {'n': fmt.count(cost['n'] as num? ?? 0)}), 'all'),
       ),
+      if (ward && wait != null) _WaitCard(m: wait, subject: subject, hours: hours),
     ];
-    return Panel(
-      title: t('scorecard.measures'),
+    final measures = Panel(
+      title: t(cards.length > 3 ? 'scorecard.measures4' : 'scorecard.measures'),
       sub: t(few ? 'scorecard.measuresSubFew' : 'scorecard.measuresSub'),
       trailing: _Legend(subject: subject, similar: few ? t('scorecard.legendSimilarFew', {'min': _minJobs}) : t('scorecard.legendSimilar')),
       child: LayoutBuilder(builder: (_, box) {
-        if (box.maxWidth < 900) {
-          return Column(children: [for (final (i, c) in cards.indexed) ...[if (i > 0) const SizedBox(height: Tok.gapCards), c]]);
-        }
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (final (i, c) in cards.indexed) ...[if (i > 0) const SizedBox(width: Tok.gapCards), Expanded(child: c)],
+        // Four cards go two by two until the panel is wide enough for one row.
+        final perRow = box.maxWidth < 900 ? 1 : (cards.length > 3 && box.maxWidth < 1250 ? 2 : cards.length);
+        return Column(children: [
+          for (var r = 0; r < cards.length; r += perRow) ...[
+            if (r > 0) const SizedBox(height: Tok.gapCards),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              for (var i = r; i < r + perRow; i++) ...[
+                if (i > r) const SizedBox(width: Tok.gapCards),
+                Expanded(child: i < cards.length ? cards[i] : const SizedBox()),
+              ],
+            ]),
+          ],
         ]);
       }),
+    );
+    if (targets.isEmpty) return measures;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      measures,
+      const SizedBox(height: Tok.gapPanels),
+      Panel(
+        title: t('scorecard.targets.title'),
+        sub: t('scorecard.targets.sub'),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (final (i, x) in targets.indexed) ...[
+            if (i > 0) _rule(),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 2, child: Text('${x['work_type']}', style: Tok.body.copyWith(fontWeight: FontWeight.w600))),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  t('scorecard.targets.row', {'sla': x['sla_hours'], 'typical': (x['typical_hours'] as num).round(), 'n': x['jobs']}),
+                  style: Tok.body.copyWith(color: Tok.text2),
+                ),
+              ),
+            ]),
+          ],
+        ]),
+      ),
+    ]);
+  }
+}
+
+/// Ward only: average hours from first complaint to assignment, against similar jobs. Hours, not fault.
+class _WaitCard extends ConsumerWidget {
+  const _WaitCard({required this.m, required this.subject, required this.hours});
+  final Map<String, dynamic> m;
+  final String subject;
+  final String Function(num?) hours;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(stringsProvider);
+    final band = '${m['band']}';
+    final few = band == 'too_few';
+    final obs = m['observed'] as num?, exp = m['expected'] as num?;
+    final n = (m['n'] as num?) ?? 0;
+    final diff = (obs == null || exp == null) ? null : (obs - exp).round();
+    final top = [obs ?? 0, exp ?? 0, 1].reduce((a, b) => a > b ? a : b);
+    return _MeasureShell(
+      band: band,
+      why: switch (band) {
+        'too_few' => t('scorecard.why.too_few'),
+        'similar' => t('scorecard.why.similar'),
+        'well_above' || 'above' => t('scorecard.why.assign_wait.up'),
+        _ => t('scorecard.why.assign_wait.down'),
+      },
+      title: t('sc.assignWait'),
+      figure: obs == null ? '–' : '${obs.round()}',
+      unit: t('scorecard.assignUnit'),
+      sub: t('scorecard.assignSub'),
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _cmpHeader(
+          t('scorecard.cmpSimilar'),
+          few || diff == null
+              ? t('scorecard.notYet')
+              : diff == 0
+                  ? t('scorecard.same')
+                  : t(diff < 0 ? 'scorecard.hoursShorter' : 'scorecard.hoursLonger', {'n': diff.abs()}),
+        ),
+        const SizedBox(height: 8),
+        CompareBars(bars: [
+          CompareBar(subject, (obs ?? 0) / top, hours(obs)),
+          if (!few) CompareBar(t('sc.similar'), (exp ?? 0) / top, hours(exp), hatched: true),
+        ]),
+        if (few) _notYetRow(t('sc.similar'), t('scorecard.startsAt', {'min': _minJobs})),
+        _rule(),
+        _countBox(Ico.receipt, t('scorecard.count.waited'), fmt.count(n)),
+      ]),
     );
   }
 }
@@ -359,7 +487,8 @@ class _Legend extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 7),
-          Text(similar, style: Tok.body.copyWith(color: Tok.text2)),
+          // Flexible: "This contractor" plus this label is wider than a phone.
+          Flexible(child: Text(similar, style: Tok.body.copyWith(color: Tok.text2), overflow: TextOverflow.ellipsis)),
         ]),
       );
 }
@@ -421,7 +550,7 @@ Widget _countBox(IconData icon, String label, String value, {Widget? trailing, b
         Icon(icon, size: 14, color: amber ? Tok.amberIcon : Tok.text3),
         const SizedBox(width: 9),
         Expanded(child: Text(label, style: Tok.body.copyWith(color: amber ? Tok.amberText : Tok.ink, fontWeight: amber ? FontWeight.w500 : null))),
-        if (value.isNotEmpty) Text(value, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+        if (value.isNotEmpty) Padding(padding: const EdgeInsets.only(left: 8), child: Text(value, style: Tok.body.copyWith(fontWeight: FontWeight.w600))),
         ?trailing,
       ]),
     );
@@ -469,7 +598,11 @@ class _RateCard extends ConsumerWidget {
     required this.link,
     required this.onOpen,
     this.extra,
+    this.more = const [],
   });
+
+  /// Extra rows under the count box, before the link.
+  final List<Widget> more;
   final String measure, subject, ctx, unit, countLabel, link;
   final String? extra;
   final IconData countIcon;
@@ -516,6 +649,7 @@ class _RateCard extends ConsumerWidget {
         if (few) _soFar(t, n) else _ctxLine(ctx),
         const SizedBox(height: 10),
         _countBox(countIcon, countLabel, hits == null ? '–' : t('scorecard.xOfY', {'x': fmt.count(hits), 'y': fmt.count(n)})),
+        for (final w in more) ...[const SizedBox(height: 6), w],
         _rule(),
         _link(link, onOpen),
       ]),

@@ -122,11 +122,127 @@ describe("scorecards", () => {
   });
   it("gives every ward a scorecard", async () => {
     const s = (await api().get(`/api/v1/wards/${encodeURIComponent("F/S")}/scorecard`).set(as("citizen"))).body.scorecard;
-    expect(Object.keys(s.measures).sort()).toEqual(["cost", "durability", "speed"]);
+    expect(Object.keys(s.measures).sort()).toEqual(["assign_wait", "cost", "durability", "speed", "speed_fair"]);
+  });
+  it("judges speed only on jobs that had enough time", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    expect(s.measures.speed.band).toBe("well_below"); // the plain on-time figure is unchanged
+    expect(s.measures.speed_fair.band).toBe("similar");
+    expect(s.measures.speed_fair.observed).toBeGreaterThan(0.85);
+    expect(s.measures.assign_wait.band).toBe("context");
+    expect(s.measures.assign_wait.observed).toBeGreaterThan(70);
+  });
+  it("holds a ward to its time to assign", async () => {
+    const s = (await api().get("/api/v1/wards/L/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.measures.assign_wait.observed).toBeGreaterThan(s.measures.assign_wait.expected);
+    expect(["below", "well_below"]).toContain(s.measures.assign_wait.band);
+  });
+  it("names targets shorter than the work takes", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    const types = s.unreachable_targets.map((t: any) => t.work_type);
+    expect(types).toContain("Road cave-in");
+    expect(types).toContain("Open or broken manhole");
+    expect(types).not.toContain("Broken paver blocks");
+    for (const t of s.unreachable_targets) expect(t.sla_hours).toBeLessThan(t.typical_hours);
+  });
+  it("opens the jobs behind the fair speed figure", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    const fair = await api().get("/api/v1/contractors/CT03/work-orders?filter=fair_chance&limit=1").set(as("citizen"));
+    expect(fair.body.total).toBe(s.measures.speed_fair.n);
+    const late = await api().get("/api/v1/contractors/CT03/work-orders?filter=had_time&limit=1").set(as("citizen"));
+    expect(late.body.total).toBe(Math.round(s.measures.speed_fair.n * (1 - s.measures.speed_fair.observed)));
+  });
+  it("tells the summary writer when a job was assigned, not who was at fault", async () => {
+    const { readFileSync } = await import("node:fs");
+    const prompt = readFileSync(new URL("../src/pipeline/summarise.ts", import.meta.url), "utf8");
+    expect(prompt).toContain("assign_wait");
+    expect(prompt).not.toMatch(/ward office|prefer it/);
+    expect(prompt).toContain("give both");
+  });
+  it("counts what failed fixes cost a second time", async () => {
+    const s = (await api().get("/api/v1/contractors/CT04").set(as("citizen"))).body.scorecard;
+    expect(s.redo.reopened_jobs).toBe(116);
+    expect(s.redo.followed_up_jobs).toBe(70);
+    expect(s.redo.followup_jobs).toBeLessThanOrEqual(s.redo.followed_up_jobs);
+    expect(s.redo.followup_by_other).toBeLessThanOrEqual(s.redo.followed_up_jobs);
+    const jobs = await api().get("/api/v1/contractors/CT04/work-orders?filter=followed_up&limit=1").set(as("citizen"));
+    expect(jobs.body.total).toBe(s.redo.followed_up_jobs);
+    const reopened = await api().get("/api/v1/contractors/CT04/work-orders?filter=reopened&limit=1").set(as("citizen"));
+    expect(Number(reopened.body.total_cost)).toBe(Number(s.redo.reopened_spend));
+  });
+  it("counts a follow-up job once even when it follows two failed jobs", async () => {
+    const [row] = await db.$queryRaw<any[]>`SELECT COUNT(followup_work_order_id)::int AS links, COUNT(DISTINCT followup_work_order_id)::int AS jobs FROM v_followup WHERE ward_code = 'L'`;
+    const s = (await api().get("/api/v1/wards/L/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.redo.followed_up_jobs).toBe(row.links);
+    expect(s.redo.followup_jobs).toBe(row.jobs);
+  });
+  it("counts late jobs by what happened to the clock", async () => {
+    const s = (await api().get("/api/v1/contractors/CT03").set(as("citizen"))).body.scorecard;
+    expect(s.late).toEqual({ expired_before_assignment: 101, too_little_time_left: 69, had_time: 9 });
+    const [{ n }] = await db.$queryRaw<any[]>`SELECT COUNT(*)::int AS n FROM v_work_order_delay WHERE contractor_id = 'CT03' AND sla_met IS FALSE`;
+    expect(s.late.expired_before_assignment + s.late.too_little_time_left + s.late.had_time).toBe(n);
+    const one = await api().get("/api/v1/contractors/CT03/work-orders?filter=too_little_time_left&limit=1").set(as("citizen"));
+    expect(one.body.total).toBe(s.late.too_little_time_left);
+  });
+  it("shows too few jobs, not a band, for a small ward", async () => {
+    const s = (await api().get("/api/v1/wards/C/scorecard").set(as("citizen"))).body.scorecard;
+    expect(s.measures.speed_fair.band).toBe("too_few");
   });
 });
 
 describe("next-rupee plan", () => {
+  const planE = async (who = "auditor") => (await api().get("/api/v1/wards/E/plan").set(as(who))).body;
+  const decideOne = async (decision: string, check: (before: any, after: any) => void) => {
+    const before = await planE();
+    // A job whose only flag is over-billing, so the whole amount moves with the decision.
+    const [flag] = await db.$queryRaw<any[]>`
+      SELECT work_order_id FROM v_flag f WHERE ward_code = 'E' AND flag_type = 'overbilled' AND tier = 'flag' AND decision = 'open'
+        AND NOT EXISTS (SELECT 1 FROM v_flag o WHERE o.work_order_id = f.work_order_id AND o.flag_type <> 'overbilled') LIMIT 1`;
+    try {
+      await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("auditor")).send({ decision });
+      check(before, await planE());
+    } finally {
+      await db.flag_decision.deleteMany({ where: { flag_type: "overbilled", work_order_id: flag.work_order_id } });
+    }
+  };
+  it("moves recoverable money from possible to confirmed when a flag is confirmed", async () => {
+    await decideOne("confirmed", (before, after) => {
+      const moved = after.recoverable.confirmed_total - before.recoverable.confirmed_total;
+      expect(moved).toBeGreaterThan(0);
+      expect(before.recoverable.possible_total - after.recoverable.possible_total).toBe(moved);
+      expect(after.items.map((i: any) => i.within_budget)).toEqual(before.items.map((i: any) => i.within_budget));
+      expect(after.ward.remaining).toBe(before.ward.remaining);
+    });
+  });
+  it("does not count a dismissed flag as recoverable", async () => {
+    await decideOne("not_an_issue", (before, after) => {
+      expect(after.recoverable.possible_total).toBeLessThan(before.recoverable.possible_total);
+      expect(after.recoverable.confirmed_total).toBe(before.recoverable.confirmed_total);
+    });
+  });
+  it("says how often a plan item's road has been worked on this season", async () => {
+    const r = (await api().get("/api/v1/wards/L/plan").set(as("citizen"))).body;
+    expect(r.items.every((i: any) => Number.isInteger(i.road_jobs) && i.road_spend != null)).toBe(true);
+    const item = r.items.find((i: any) => i.road_id);
+    const agg = await db.work_order.aggregate({ where: { road_id: item.road_id }, _count: true, _sum: { cost_inr: true } });
+    expect(item.road_jobs).toBe(agg._count);
+    expect(Number(item.road_spend)).toBe(agg._sum.cost_inr ?? 0);
+  });
+  it("puts a job flagged equally for billing and DLP under DLP, every time", async () => {
+    const [want] = await db.$queryRaw<any[]>`
+      SELECT COALESCE(SUM(top), 0)::float8 AS dlp FROM (
+        SELECT MAX(amount_at_stake) AS top, MAX(amount_at_stake) FILTER (WHERE flag_type = 'dlp') AS dlp_top
+        FROM v_flag WHERE tier = 'flag' AND decision <> 'not_an_issue' GROUP BY work_order_id) t
+      WHERE dlp_top = top`;
+    const [got] = await db.$queryRaw<any[]>`SELECT SUM(confirmed_dlp + possible_dlp)::float8 AS dlp FROM v_ward_recoverable`;
+    expect(got.dlp).toBe(want.dlp);
+  });
+  it("gives a citizen the recoverable totals and what they would fund", async () => {
+    const r = await planE("citizen");
+    expect(Object.keys(r.recoverable).sort()).toEqual(["confirmed_billing", "confirmed_dlp", "confirmed_total", "possible_billing", "possible_dlp", "possible_total", "ward_code"]);
+    expect(r.items.every((i: any) => typeof i.within_recovered === "boolean" && typeof i.within_possible === "boolean")).toBe(true);
+    expect(r.items.filter((i: any) => i.within_possible).length).toBe(26); // Ward E is overspent; recovery would fund all 26
+  });
   it("ranks by risk with parts that add up and a correct budget line", async () => {
     const r = (await api().get("/api/v1/wards/B/plan").set(as("citizen"))).body;
     expect(r.items.length).toBeGreaterThan(0);
@@ -156,6 +272,11 @@ describe("next-rupee plan", () => {
 });
 
 describe("settings", () => {
+  it("rejects a fair-chance share outside 0 to 1", async () => {
+    const r = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { fair_chance_pct: 1.5 } });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toContain("between 0 and 1");
+  });
   it("is for auditors only and keeps the weights at 100", async () => {
     expect((await api().get("/api/v1/settings").set(as("officer.e"))).status).toBe(403);
     const bad = await api().put("/api/v1/settings").set(as("auditor")).send({ values: { w_traffic: 40 } });
@@ -254,6 +375,9 @@ describe("ask", () => {
     const row = await db.summary.findUnique({ where });
     if (!row) return; // summarise has not been run on this database
     const get = async () => (await api().get("/api/v1/ask/summary?type=ward&id=E").set(as("citizen"))).body.summary.stale;
+    // Fresh means the stored hash matches today's figures, whenever the summary was written.
+    const { factsHash } = await import("../src/modules/ask");
+    await db.summary.update({ where, data: { facts_hash: (await factsHash("ward", "E")).hash } });
     expect(await get()).toBe(false);
     await db.summary.update({ where, data: { facts_hash: "old" } });
     expect(await get()).toBe(true);
@@ -274,5 +398,56 @@ describe("ask", () => {
     expect(f.recent_work_orders[0]).not.toHaveProperty("cost_ratio");
     expect(f.recent_work_orders[0]).not.toHaveProperty("expected_cost");
     expect(f.top_of_plan.length).toBeGreaterThan(0);
+  });
+});
+
+describe("action pack", () => {
+  const draft = (who: string, body: object) => api().post("/api/v1/flags/draft").set(as(who)).send(body);
+  it("is for officers and auditors, inside their own ward", async () => {
+    expect((await draft("citizen", { kind: "dlp", road_id: "RD0220" })).status).toBe(403);
+    expect((await draft("officer.e", { kind: "billing", contractor_id: "CT03", ward_code: "L" })).status).toBe(403);
+    expect((await draft("officer.e", { kind: "dlp", road_id: "RD0220" })).status).toBe(403); // RD0220 is in ward L
+    expect((await draft("auditor", { kind: "dlp", road_id: "NOPE" })).status).toBe(404);
+    expect((await draft("auditor", { kind: "billing", contractor_id: "CT03" })).status).toBe(400);
+  });
+  it("has nothing to draft until a flag in the group is decided", async () => {
+    const r = await draft("auditor", { kind: "billing", contractor_id: "CT01", ward_code: "E", plain: true });
+    expect(r.status).toBe(409);
+  });
+  it("drafts one document naming every decided job in the group", async () => {
+    const [flag] = await db.$queryRaw<any[]>`
+      SELECT work_order_id, contractor_id, amount_at_stake FROM v_flag f WHERE ward_code = 'E' AND flag_type = 'overbilled' AND tier = 'flag' AND decision = 'open'
+        AND NOT EXISTS (SELECT 1 FROM v_flag o WHERE o.work_order_id = f.work_order_id AND o.flag_type <> 'overbilled') LIMIT 1`;
+    try {
+      await api().put(`/api/v1/flags/overbilled/${flag.work_order_id}/decision`).set(as("officer.e")).send({ decision: "needs_explanation", note: "Area looks small for this bill" });
+      const r = await draft("officer.e", { kind: "billing", contractor_id: flag.contractor_id, ward_code: "E", lang: "mr", plain: true });
+      expect(r.status).toBe(200);
+      expect(r.body.source).toBe("template");
+      expect(r.body.lang).toBe("en"); // the template is English only
+      expect(r.body.work_order_ids).toEqual([flag.work_order_id]);
+      expect(r.body.total_amount).toBe(flag.amount_at_stake);
+      expect(r.body.draft.body.startsWith("DRAFT FOR REVIEW")).toBe(true);
+      expect(r.body.draft.body).toContain(flag.work_order_id);
+      expect(r.body.draft.body).toContain("Area looks small for this bill");
+      expect(r.body.draft.body).toMatch(/Prepared by: _+/);
+      expect(r.body.draft.body).not.toMatch(/fraud|scam|corrupt/i);
+    } finally {
+      await db.flag_decision.deleteMany({ where: { flag_type: "overbilled", work_order_id: flag.work_order_id } });
+    }
+  });
+  it("accepts a written draft only if it names every job and accuses no one", async () => {
+    const { acceptable } = await import("../src/modules/flags");
+    const d = (body: string, title = "Request for explanation") => ({ title, body });
+    expect(acceptable(d("Please explain WO25-00001 and WO25-00002."), ["WO25-00001", "WO25-00002"], "en")).toBe(true);
+    expect(acceptable(d("Please explain WO25-00001."), ["WO25-00001", "WO25-00002"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001 looks like fraud."), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001: a corrupted file is not an accusation, but the word is still refused."), ["WO25-00001"], "en")).toBe(false);
+    // The title is checked too, and so are the other words the product rules ban.
+    expect(acceptable(d("Please explain WO25-00001.", "Fraud notice"), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("WO25-00001 may be a cheat."), ["WO25-00001"], "en")).toBe(false);
+    expect(acceptable(d("Money was stolen on WO25-00001? No: stealing is not in the facts."), ["WO25-00001"], "en")).toBe(false);
+    // A Marathi draft must actually be in Devanagari, or the English template is used and labelled.
+    expect(acceptable(d("Please explain WO25-00001."), ["WO25-00001"], "mr")).toBe(false);
+    expect(acceptable(d("कृपया WO25-00001 बद्दल लेखी खुलासा द्या."), ["WO25-00001"], "mr")).toBe(true);
   });
 });

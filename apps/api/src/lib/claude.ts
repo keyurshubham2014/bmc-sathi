@@ -10,14 +10,14 @@ export const SONNET = "claude-sonnet-5-5";
 let client: Anthropic | null = null;
 
 /** Asks for an answer in the given shape. Throws if Claude declines or the answer does not fit. */
-export async function askJson<T extends z.ZodType>(model: string, system: string, user: string, schema: T): Promise<z.infer<T>> {
+export async function askJson<T extends z.ZodType>(model: string, system: string, user: string, schema: T, opts?: { timeout?: number; maxRetries?: number }): Promise<z.infer<T>> {
   if (!config.anthropicKey) throw new Error("ANTHROPIC_API_KEY is not set.");
   client ??= new Anthropic({ apiKey: config.anthropicKey, maxRetries: 4 });
   const r = await client.messages.parse({
     model, max_tokens: 16000, system,
     messages: [{ role: "user", content: user }],
     output_config: { effort: "low", format: zodOutputFormat(schema) },
-  });
+  }, opts);
   if (r.stop_reason !== "end_turn" || !r.parsed_output) throw new Error(`Claude stopped with ${r.stop_reason}`);
   return r.parsed_output;
 }

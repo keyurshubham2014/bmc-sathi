@@ -22,6 +22,9 @@ settings.put("/", async (req, res) => {
     throw new AppError("validation_failed", `The six risk weights must total 100. They total ${total}.`, [{ field: "weights", message: `Total is ${total}` }]);
   if (next.overbill_watch_ratio >= next.overbill_ratio)
     throw new AppError("validation_failed", "The watch line must be below the flag line.", [{ field: "overbill_watch_ratio", message: "Must be below overbill_ratio" }]);
+  // The delay view uses this as a percentile; outside 0 to 1 every read of it would fail.
+  if (next.fair_chance_pct < 0 || next.fair_chance_pct > 1)
+    throw new AppError("validation_failed", "The fair-chance share must be between 0 and 1.", [{ field: "fair_chance_pct", message: "Must be between 0 and 1" }]);
   await db.$transaction(Object.entries(values).map(([key, value]) => db.setting.update({ where: { key }, data: { value } })));
   res.json({ items: await db.setting.findMany({ orderBy: { key: "asc" } }) });
 });

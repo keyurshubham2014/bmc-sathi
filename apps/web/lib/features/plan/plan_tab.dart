@@ -25,6 +25,21 @@ List<String> planReasons(Strings t, Map<String, dynamic> i) => [
       if ((i['days_open'] as num) >= 14) t('plan.reason.days', {'n': (i['days_open'] as num).round()}),
     ];
 
+/// Where the two "if recovered" lines sit: the index of the first item that money would not cover
+/// (items.length when it covers them all). Null when nothing is flagged, or when the line would sit
+/// on the line above it. The real budget line is never moved by this.
+({int? confirmed, int? possible}) recoveryLines(List<Map<String, dynamic>> items, Map<String, dynamic> rec) {
+  int stop(String key) {
+    final i = items.indexWhere((x) => x[key] != true);
+    return i < 0 ? items.length : i;
+  }
+
+  final b = stop('within_budget');
+  final c = ((rec['confirmed_total'] as num?) ?? 0) > 0 ? stop('within_recovered') : b;
+  final p = ((rec['possible_total'] as num?) ?? 0) > 0 ? stop('within_possible') : c;
+  return (confirmed: c > b ? c : null, possible: p > c ? p : null);
+}
+
 /// Open issues ranked by risk, with a method, a cost and the line where the budget runs out.
 /// Rendered inside the ward screen, which owns the top bar.
 class PlanTab extends ConsumerStatefulWidget {
@@ -51,6 +66,10 @@ class _PlanTabState extends ConsumerState<PlanTab> {
         final items = List<Map<String, dynamic>>.from(data['items']);
         final budget = ward['budget'] as num, spend = ward['spend'] as num, remaining = ward['remaining'] as num;
         final over = remaining <= 0;
+        final rec = Map<String, dynamic>.from(data['recoverable'] ?? const {});
+        final confirmed = (rec['confirmed_total'] as num?) ?? 0, possible = (rec['possible_total'] as num?) ?? 0;
+        final rl = recoveryLines(items, rec);
+        Widget recoverLine(String key, num amount) => BudgetLine(t(key), sub: t('plan.lineRecoverSub', {'amount': fmt.money(amount)}), icon: Ico.flag);
         final fit = items.where((i) => i['within_budget'] == true).toList();
         final shown = _all ? items : items.take(_top).toList();
         // Index of the first item the budget cannot cover; the line sits just before it.
@@ -102,6 +121,34 @@ class _PlanTabState extends ConsumerState<PlanTab> {
           title: t('plan.ranked'),
           sub: t('plan.rankedSub'),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (confirmed + possible > 0) ...[
+              InsetCard(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text.rich(TextSpan(style: Tok.body, children: [
+                    TextSpan(text: '${t('plan.flags.title')}: ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    TextSpan(
+                      text: t('plan.flags.body', {
+                        'possible': fmt.money(possible),
+                        'dlp': fmt.money(rec['possible_dlp'] as num?),
+                        'billing': fmt.money(rec['possible_billing'] as num?),
+                        'confirmed': fmt.money(confirmed),
+                      }),
+                    ),
+                  ])),
+                  const SizedBox(height: 2),
+                  Text(
+                    t('plan.flags.funds', {
+                      'c': items.where((i) => i['within_recovered'] == true).length,
+                      'p': items.where((i) => i['within_possible'] == true).length,
+                      'n': items.length,
+                    }),
+                    style: Tok.sub,
+                  ),
+                ]),
+              ),
+              const SizedBox(height: Tok.gapCards),
+            ],
             if (over)
               BudgetLine(t('plan.lineOver'), sub: t('plan.lineOverSub', {'amount': fmt.money(-remaining)}), below: t('plan.lineBelowOver')),
             for (final (n, i) in shown.indexed) ...[
@@ -114,6 +161,10 @@ class _PlanTabState extends ConsumerState<PlanTab> {
                   above: t('plan.lineAbove', {'amount': fmt.money(remaining)}),
                   below: t('plan.lineBelow'),
                 )
+              else if (n == rl.confirmed)
+                recoverLine('plan.lineConfirmed', confirmed)
+              else if (n == rl.possible)
+                recoverLine('plan.linePossible', confirmed + possible)
               else if (n > 0)
                 const SizedBox(height: Tok.gapCards),
               _PlanCard(
@@ -126,6 +177,9 @@ class _PlanTabState extends ConsumerState<PlanTab> {
                         : Pill(t('plan.status.below'), icon: Ico.arrowDown),
               ),
             ],
+            // A line that covers every item sits after the last one, once the whole list is shown.
+            if (rest == 0 && rl.confirmed == items.length) recoverLine('plan.lineConfirmed', confirmed),
+            if (rest == 0 && rl.possible == items.length) recoverLine('plan.linePossible', confirmed + possible),
             const SizedBox(height: Tok.s3),
             Row(children: [
               Icon(over ? Ico.alert : Icons.check_circle_outline, size: 15, color: over ? Tok.red : Tok.teal),
@@ -291,6 +345,8 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
                 ].join(' · '),
                 style: Tok.sub,
               ),
+              if (((i['road_jobs'] as num?) ?? 0) > 1)
+                Text(t('plan.roadJobs', {'n': i['road_jobs'], 'amount': fmt.money(i['road_spend'] as num?)}), style: Tok.sub),
               if (reasons.isNotEmpty) ...[
                 const SizedBox(height: Tok.s2),
                 Wrap(spacing: 6, runSpacing: 6, children: [

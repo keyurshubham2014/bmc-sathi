@@ -1,7 +1,7 @@
 -- All audit and money views. Rerunnable: drops and recreates everything.
 -- Rules read thresholds from the setting table, so they change without a redeploy.
 
-DROP VIEW IF EXISTS v_plan, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
+DROP VIEW IF EXISTS v_followup, v_work_order_delay, v_plan, v_ward_recoverable, v_open_issue_risk, v_method_durability, v_scorecard, v_ward_spend_breakdown, v_ward_money, v_flag, v_work_order CASCADE;
 
 CREATE OR REPLACE FUNCTION cfg(k text) RETURNS double precision
 LANGUAGE sql STABLE AS $$ SELECT value FROM setting WHERE key = k $$;
@@ -34,6 +34,44 @@ CROSS JOIN LATERAL (
 ) x
 LEFT JOIN (SELECT date, MAX(rainfall_mm) AS mm FROM rainfall_daily GROUP BY date) rn
        ON rn.date = COALESCE(w.completed_at, w.assigned_at)::date;
+
+-- Each job's clock split at assignment: the wait before the contractor had the job, and the work after it.
+-- The clock starts at the first linked complaint, so jobs with no complaint are left out.
+CREATE VIEW v_work_order_delay AS
+WITH d AS (
+  SELECT w.work_order_id, w.ward_code, w.contractor_id, w.work_type, w.repair_method, w.rain_band, w.ward_type,
+         w.sla_hours, w.sla_met, f.first_complaint_at,
+         GREATEST(EXTRACT(EPOCH FROM (w.assigned_at - f.first_complaint_at)) / 3600, 0)::float8 AS hours_to_assign,
+         (EXTRACT(EPOCH FROM (w.completed_at - w.assigned_at)) / 3600)::float8                 AS hours_to_do
+  FROM v_work_order w
+  JOIN (SELECT l.work_order_id, MIN(c.received_at) AS first_complaint_at
+        FROM work_order_complaint l JOIN complaint c USING (complaint_id) GROUP BY 1) f USING (work_order_id)
+),
+t AS (  -- what such work typically takes once assigned
+  SELECT work_type, percentile_cont(cfg('fair_chance_pct')) WITHIN GROUP (ORDER BY hours_to_do) AS typical_hours
+  FROM d GROUP BY 1
+)
+SELECT d.*, t.typical_hours,
+       (d.sla_hours - d.hours_to_assign >= t.typical_hours) AS fair_chance,
+       CASE WHEN d.sla_met IS NOT FALSE                              THEN NULL
+            WHEN d.hours_to_assign >= d.sla_hours                    THEN 'expired_before_assignment'
+            WHEN d.sla_hours - d.hours_to_assign >= t.typical_hours  THEN 'had_time'
+            ELSE 'too_little_time_left' END AS miss_cause
+FROM d JOIN t USING (work_type);
+
+-- Each re-opened job and the next job on the same road and work type within 30 days of it, if there was one.
+-- The link is inferred from place, kind of work and date: "followed by another job", not proof it redid this one.
+CREATE VIEW v_followup AS
+SELECT w.work_order_id, w.contractor_id, w.ward_code, w.cost_inr,
+       n.work_order_id AS followup_work_order_id, n.cost_inr AS followup_cost, n.contractor_id AS followup_contractor_id
+FROM work_order w
+LEFT JOIN LATERAL (
+  SELECT n.work_order_id, n.cost_inr, n.contractor_id FROM work_order n
+  WHERE n.road_id = w.road_id AND n.work_type = w.work_type
+    AND n.assigned_at > w.completed_at AND n.assigned_at <= w.completed_at + interval '30 days'
+  ORDER BY n.assigned_at, n.work_order_id LIMIT 1
+) n ON true
+WHERE w.reopened_within_30d;
 
 -- Flags. Identity is (flag_type, work_order_id), so decisions survive recomputation.
 CREATE VIEW v_flag AS
@@ -122,6 +160,33 @@ LEFT JOIN (
   GROUP BY ward_code
 ) fl ON fl.ward_code = wd.ward_code;
 
+-- Flagged money per ward: confirmed by a decision, or still possible (open or awaiting an explanation).
+-- A work order never counts for more than its largest flag that has not been dismissed. Its confirmed part
+-- is its largest confirmed flag; whatever is left of the largest amount stays possible.
+-- When a billing flag and a DLP flag tie for largest, the amount goes under DLP.
+CREATE VIEW v_ward_recoverable AS
+WITH f AS (
+  SELECT ward_code, work_order_id, amount_at_stake AS amt, (flag_type = 'dlp') AS is_dlp, (decision = 'confirmed') AS is_confirmed
+  FROM v_flag WHERE tier = 'flag' AND decision <> 'not_an_issue'
+),
+w AS (
+  SELECT ward_code, work_order_id,
+         COALESCE(MAX(amt) FILTER (WHERE is_confirmed), 0)                                    AS c_amt,
+         COALESCE((array_agg(is_dlp ORDER BY amt DESC, is_dlp DESC) FILTER (WHERE is_confirmed))[1], false) AS c_dlp,
+         MAX(amt)                                                                             AS t_amt,
+         (array_agg(is_dlp ORDER BY amt DESC, is_dlp DESC))[1]                                             AS t_dlp
+  FROM f GROUP BY 1, 2
+)
+SELECT wd.ward_code,
+       COALESCE(SUM(c_amt) FILTER (WHERE NOT c_dlp), 0)::bigint         AS confirmed_billing,
+       COALESCE(SUM(c_amt) FILTER (WHERE c_dlp), 0)::bigint             AS confirmed_dlp,
+       COALESCE(SUM(c_amt), 0)::bigint                                  AS confirmed_total,
+       COALESCE(SUM(t_amt - c_amt) FILTER (WHERE NOT t_dlp), 0)::bigint AS possible_billing,
+       COALESCE(SUM(t_amt - c_amt) FILTER (WHERE t_dlp), 0)::bigint     AS possible_dlp,
+       COALESCE(SUM(t_amt - c_amt), 0)::bigint                          AS possible_total
+FROM ward wd LEFT JOIN w USING (ward_code)
+GROUP BY wd.ward_code;
+
 -- Spend per ward by contractor, repair method and week.
 CREATE VIEW v_ward_spend_breakdown AS
 SELECT ward_code, 'contractor' AS dimension, contractor_id AS key, contractor_name AS label,
@@ -205,6 +270,53 @@ ctx AS (
          percentile_cont(0.5) WITHIN GROUP (ORDER BY cost_ratio) AS median_ratio,
          (COUNT(*) FILTER (WHERE cost_ratio > cfg('overbill_ratio')))::int AS over_jobs
   FROM jobs GROUP BY 1, 2
+),
+-- The same comparison for the two delay measures, over jobs whose clock is known.
+dj AS (
+  SELECT 'contractor' AS subject_type, contractor_id AS subject_id, d.* FROM v_work_order_delay d
+  UNION ALL
+  SELECT 'ward', ward_code, d.* FROM v_work_order_delay d
+),
+dcell AS (
+  SELECT subject_type, subject_id, work_type, repair_method, rain_band, ward_type,
+         COUNT(*) FILTER (WHERE fair_chance) AS n_fair, COUNT(*) FILTER (WHERE fair_chance AND sla_met) AS fair_on,
+         COUNT(*) AS n_wait, SUM(hours_to_assign) AS sum_wait, SUM(hours_to_assign * hours_to_assign) AS sq_wait
+  FROM dj GROUP BY 1, 2, 3, 4, 5, 6
+),
+dstrat AS (
+  SELECT work_type, repair_method, rain_band, ward_type,
+         COUNT(*) FILTER (WHERE fair_chance) AS n_fair, COUNT(*) FILTER (WHERE fair_chance AND sla_met) AS fair_on,
+         COUNT(*) AS n_wait, SUM(hours_to_assign) AS sum_wait
+  FROM v_work_order_delay GROUP BY 1, 2, 3, 4
+),
+dwide_all AS (
+  SELECT work_type, repair_method, SUM(n_fair) AS n_fair, SUM(fair_on) AS fair_on, SUM(n_wait) AS n_wait, SUM(sum_wait) AS sum_wait
+  FROM dstrat GROUP BY 1, 2
+),
+dwide_own AS (
+  SELECT subject_type, subject_id, work_type, repair_method,
+         SUM(n_fair) AS n_fair, SUM(fair_on) AS fair_on, SUM(n_wait) AS n_wait, SUM(sum_wait) AS sum_wait
+  FROM dcell GROUP BY 1, 2, 3, 4
+),
+dx AS (
+  SELECT c.subject_type, c.subject_id, c.n_fair, c.fair_on, c.n_wait, c.sum_wait, c.sq_wait,
+         CASE WHEN s.n_fair - c.n_fair >= 5 THEN (s.fair_on - c.fair_on)::float8 / (s.n_fair - c.n_fair)
+              ELSE (wa.fair_on - wo.fair_on)::float8 / NULLIF(wa.n_fair - wo.n_fair, 0) END AS exp_fair,
+         CASE WHEN s.n_wait - c.n_wait >= 5 THEN (s.sum_wait - c.sum_wait) / (s.n_wait - c.n_wait)
+              ELSE (wa.sum_wait - wo.sum_wait) / NULLIF(wa.n_wait - wo.n_wait, 0) END AS exp_wait
+  FROM dcell c
+  JOIN dstrat s     USING (work_type, repair_method, rain_band, ward_type)
+  JOIN dwide_all wa USING (work_type, repair_method)
+  JOIN dwide_own wo USING (subject_type, subject_id, work_type, repair_method)
+),
+dagg AS (
+  SELECT subject_type, subject_id,
+         SUM(n_fair)::bigint AS n_fair, SUM(fair_on)::float8 / NULLIF(SUM(n_fair), 0) AS obs_fair,
+         SUM(n_fair * exp_fair) / NULLIF(SUM(n_fair) FILTER (WHERE exp_fair IS NOT NULL), 0) AS exp_fair,
+         SUM(n_wait)::bigint AS n_wait, SUM(sum_wait) / NULLIF(SUM(n_wait), 0) AS obs_wait,
+         SUM(n_wait * exp_wait) / NULLIF(SUM(n_wait) FILTER (WHERE exp_wait IS NOT NULL), 0) AS exp_wait,
+         sqrt(GREATEST(SUM(sq_wait) / NULLIF(SUM(n_wait), 0) - power(SUM(sum_wait) / NULLIF(SUM(n_wait), 0), 2), 0)) AS sd_wait
+  FROM dx GROUP BY 1, 2
 )
 SELECT c.subject_type, c.subject_id, 'speed' AS measure, a.obs_sla AS observed, a.exp_sla AS expected,
        a.n_sla AS n, band(a.n_sla, (a.obs_sla - a.exp_sla) / NULLIF(sqrt(a.exp_sla * (1 - a.exp_sla) / NULLIF(a.n_sla, 0)), 0)) AS band,
@@ -222,7 +334,20 @@ SELECT c.subject_type, c.subject_id, 'cost', c.median_ratio, 1, c.jobs::bigint,
        CASE WHEN c.over_jobs::float8 / c.jobs > 2 * (SELECT AVG((cost_ratio > cfg('overbill_ratio'))::int) FROM v_work_order)
             THEN 'review' ELSE 'typical' END,
        c.over_jobs, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
-FROM ctx c;
+FROM ctx c
+UNION ALL
+-- On time among jobs that reached the subject with enough time left.
+SELECT c.subject_type, c.subject_id, 'speed_fair', d.obs_fair, d.exp_fair, COALESCE(d.n_fair, 0),
+       band(COALESCE(d.n_fair, 0), (d.obs_fair - d.exp_fair) / NULLIF(sqrt(d.exp_fair * (1 - d.exp_fair) / NULLIF(d.n_fair, 0)), 0)),
+       NULL::int, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
+FROM ctx c LEFT JOIN dagg d USING (subject_type, subject_id)
+UNION ALL
+-- Hours a job waited before it was assigned. Fewer is better. A ward assigns jobs; a contractor does not, so it gets no band.
+SELECT c.subject_type, c.subject_id, 'assign_wait', d.obs_wait, d.exp_wait, COALESCE(d.n_wait, 0),
+       CASE WHEN c.subject_type = 'contractor' THEN 'context'
+            ELSE band(COALESCE(d.n_wait, 0), (d.exp_wait - d.obs_wait) / NULLIF(d.sd_wait / sqrt(NULLIF(d.n_wait, 0)), 0)) END,
+       NULL::int, c.jobs, c.spend, c.wards, c.heavy_rain_jobs, c.low_lying_jobs
+FROM ctx c LEFT JOIN dagg d USING (subject_type, subject_id);
 
 -- ---------- next-rupee plan ----------
 
@@ -334,5 +459,13 @@ o AS (
   FROM i JOIN pick pk USING (issue_id)
 )
 SELECT o.*, wm.remaining AS ward_remaining,
-       (wm.remaining > 0 AND o.cumulative_cost <= wm.remaining) AS within_budget
-FROM o JOIN v_ward_money wm USING (ward_code);
+       (wm.remaining > 0 AND o.cumulative_cost <= wm.remaining) AS within_budget,
+       -- Recovered money pays off any overspend first. It never changes within_budget.
+       (wm.remaining + rv.confirmed_total > 0 AND o.cumulative_cost <= wm.remaining + rv.confirmed_total) AS within_recovered,
+       (wm.remaining + rv.confirmed_total + rv.possible_total > 0
+        AND o.cumulative_cost <= wm.remaining + rv.confirmed_total + rv.possible_total)                    AS within_possible,
+       -- Every loaded job on this road, whatever the work type. The data holds one season, like every other total here.
+       COALESCE(rj.road_jobs, 0) AS road_jobs, COALESCE(rj.road_spend, 0)::bigint AS road_spend
+FROM o JOIN v_ward_money wm USING (ward_code) JOIN v_ward_recoverable rv USING (ward_code)
+LEFT JOIN (SELECT road_id, COUNT(*)::int AS road_jobs, SUM(cost_inr)::bigint AS road_spend FROM work_order GROUP BY road_id) rj
+       ON rj.road_id = o.road_id;

@@ -1935,9 +1935,9 @@ class BudgetLine extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     container: true,
     label: [title, ?sub].join('. '),
-    child: SizedBox(
+    child: ConstrainedBox(
       // Phone: the pill reaches the left edge, so the above/below labels get their own bands.
-      height: isPhone(context) ? 104 : 66,
+      constraints: BoxConstraints(minHeight: isPhone(context) ? 104 : 66),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1970,6 +1970,8 @@ class BudgetLine extends StatelessWidget {
               ),
             ),
           Container(
+            // Phone: keeps the bands clear when a wrapped label makes the pill taller.
+            margin: EdgeInsets.symmetric(vertical: isPhone(context) ? 26 : 0),
             padding: const EdgeInsets.fromLTRB(12, 9, 18, 10),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1987,13 +1989,16 @@ class BudgetLine extends StatelessWidget {
                   child: Icon(icon, size: 16, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(title, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
-                    if (sub != null) Text(sub!, style: Tok.sub),
-                  ],
+                // Flexible so a long label wraps on a narrow screen instead of overflowing.
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, style: Tok.body.copyWith(fontWeight: FontWeight.w600)),
+                      if (sub != null) Text(sub!, style: Tok.sub),
+                    ],
+                  ),
                 ),
               ],
             ),
