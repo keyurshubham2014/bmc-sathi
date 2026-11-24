@@ -140,7 +140,7 @@ Future<void> _pumpShell(WidgetTester tester, Size size) async {
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   SharedPreferences.setMockInitialValues({
-    'session': jsonEncode(const Session(token: 't', name: 'R. Kulkarni', role: 'ward_officer', wardCode: 'E').toJson()),
+    'session': jsonEncode(const Session(token: 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjQxMDI0NDQ4MDB9.sig', /* exp 2100 */ name: 'R. Kulkarni', role: 'ward_officer', wardCode: 'E').toJson()),
   });
   final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
